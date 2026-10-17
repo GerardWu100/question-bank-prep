@@ -60,4 +60,4 @@ Last checked: 2026-10-16, Docker Node 24 (Debian bookworm); earlier native macOS
 
 Keep this section current: distinguish completed local functionality from unverified release targets. Do not mark the full original acceptance matrix complete based only on the happy-path browser test.
 
-- GitHub Actions is supplied as `ops/github-actions-check.yml`, not an active workflow. The initial push was rejected because the existing OAuth login lacks `workflow` scope. All checks ran locally; enabling hosted CI requires a separately authorized credential with workflow permission.
+- `.github/workflows/tests.yml` runs typecheck, unit tests, build and the browser test on every push and pull request; `publish-image.yml` reuses it, then builds the `app` target for amd64 and arm64 and pushes `ghcr.io/gerardwu100/question-bank-prep` (latest, sha-<commit>, and semver tags from `v*.*.*`). The image reads `/data`, `/question_bank`, `/materials` and `/codex` (see `docker-compose.example.yml`); a folder setting whose folder is missing is treated as not configured.

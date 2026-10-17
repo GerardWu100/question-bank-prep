@@ -4,12 +4,70 @@ A local, single-user study application for prepared Markdown question banks. Pra
 
 ## Run with Docker
 
-```sh
-docker build --target app -t question-bank-prep .
-docker run --rm -p 127.0.0.1:3000:3000 -e STUDY_PASSWORD=change-me -v question-bank-data:/app/app-data question-bank-prep
+You need a computer that stays on, with [Docker](https://docs.docker.com/engine/install/). No clone and no build: the image is published for ordinary PCs and servers (amd64) and Raspberry Pi or ARM servers (arm64).
+
+### Option A: Docker Compose (recommended)
+
+Save this as `docker-compose.yml` in an empty folder, and put `STUDY_PASSWORD=<a password>` in a file named `.env` beside it:
+
+```yaml
+services:
+  question-bank-prep:
+    image: ghcr.io/gerardwu100/question-bank-prep:latest
+    container_name: question-bank-prep
+    restart: unless-stopped
+    user: "1000:1000"                 # your `id -u`:`id -g`
+    ports:
+      - "6848:3000"                   # web page at http://<server>:6848
+    environment:
+      - TZ=America/Toronto
+      - STUDY_PASSWORD=${STUDY_PASSWORD}
+    volumes:
+      - ~/.containers/question-bank-prep:/data              # database and backups
+      - ~/projects/cfa/question_bank:/question_bank:ro      # question banks
+      - ~/projects/cfa/md_materials:/materials:ro           # study notes
+      - ~/.codex:/codex:ro                                  # Codex login, for the tutor
 ```
 
-Open `http://127.0.0.1:3000` and sign in with the password. A container listens on a non-loopback address, so it needs `STUDY_PASSWORD`. The named volume keeps the database between runs. AI needs a Codex login inside the container; mounting one read-only (`-v ~/.codex:/root/.codex:ro`) is untested.
+Then start it from that folder:
+
+```bash
+docker compose up -d
+```
+
+A [fully commented version](docker-compose.example.yml) of this file is in the repository too. It also joins a Docker network named `single`, where a reverse proxy can reach it. [`docker-compose.yml`](docker-compose.yml) builds the same service from a checkout.
+
+### Option B: one `docker run` command
+
+```bash
+docker run -d --name question-bank-prep --restart unless-stopped \
+  --user 1000:1000 -p 6848:3000 \
+  -e TZ=America/Toronto -e STUDY_PASSWORD=change-me \
+  -v ~/.containers/question-bank-prep:/data \
+  -v ~/projects/cfa/question_bank:/question_bank:ro \
+  -v ~/projects/cfa/md_materials:/materials:ro \
+  -v ~/.codex:/codex:ro \
+  ghcr.io/gerardwu100/question-bank-prep:latest
+```
+
+### Before you start: three things to check
+
+| Check | Why | What to change |
+|---|---|---|
+| The left side of each volume line | Those are the folders on your computer | Your `question_bank`, `md_materials` and Codex folders; leave out the notes or Codex line to run without that feature |
+| Run `id -u` and `id -g` | The database should belong to you, and the Codex login is readable only by you | If either is not `1000`, change `user:` |
+| `STUDY_PASSWORD` | The container listens beyond the server itself, so the app refuses to start without a password | Set it in `.env` |
+
+Then open **`http://<server address>:6848`** and sign in. The question folder syncs every time the app opens; the database lives in `/data`.
+
+### Update
+
+| Installed with | Update with |
+|---|---|
+| Compose | `docker compose pull && docker compose up -d` |
+| `docker run` | `docker pull ghcr.io/gerardwu100/question-bank-prep:latest`, then `docker rm -f question-bank-prep`, then the same `docker run` command again |
+
+Your progress, chats and notes live in `/data`, not in the container, so updating never loses them. **Pin a version** by replacing `latest` with `1`, `1.0` or `1.0.0` once releases are tagged (`git tag v1.0.0 && git push --tags` publishes them).
 
 ## Run without Docker
 

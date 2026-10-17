@@ -13,6 +13,17 @@ import { calculate } from "../../calculator/index.js";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 dotenv.config({ path: resolve(root, ".env"), quiet: true });
 const dataDirectory = resolve(root, process.env.STUDY_DATA_DIR || "app-data");
+/** A folder setting, resolved from the project root; unset or missing means "not configured". */
+const optionalFolder = (name: "MATERIAL_ROOT" | "READING_ROOT") => {
+  const value = process.env[name];
+  if (!value) return undefined;
+  const folder = resolve(root, value);
+  if (existsSync(folder)) return folder;
+  console.warn(`${name} folder ${folder} does not exist; that feature is off.`);
+  return undefined;
+};
+const materialRoot = optionalFolder("MATERIAL_ROOT");
+const readingRoot = optionalFolder("READING_ROOT");
 const host = process.env.STUDY_HOST || "127.0.0.1";
 const port = Number(process.env.STUDY_PORT || "3000");
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -25,24 +36,10 @@ const { app, store } = await buildApp({
   logger: true,
   provider: new SubscriptionProvider(),
   calculator: calculate,
-  readingRoot: process.env.READING_ROOT
-    ? resolve(root, process.env.READING_ROOT)
-    : undefined,
+  readingRoot,
 });
-registerMaterialRoutes(
-  app,
-  store,
-  process.env.MATERIAL_ROOT
-    ? resolve(root, process.env.MATERIAL_ROOT)
-    : undefined,
-  dataDirectory,
-);
-registerReadingRoutes(
-  app,
-  process.env.READING_ROOT
-    ? resolve(root, process.env.READING_ROOT)
-    : undefined,
-);
+registerMaterialRoutes(app, store, materialRoot, dataDirectory);
+registerReadingRoutes(app, readingRoot);
 const webDirectory = resolve(root, "apps/web/dist");
 if (existsSync(webDirectory)) {
   await app.register(staticFiles, { root: webDirectory });

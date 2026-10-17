@@ -1,0 +1,34 @@
+# Run the checks. Every push to main and every pull request runs them, and the
+# image workflow calls them first, so a commit whose checks fail never becomes
+# a published image.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      # The tutor's notes search runs the real ripgrep, as the image does.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Browser test: Chromium plus its system libraries.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          CI: "1"

@@ -1,0 +1,53 @@
+# Run the published image without cloning the repository. This file is all
+# the server needs; save it as docker-compose.yml in an empty folder.
+#
+# Start:   docker compose up -d
+# Update:  docker compose pull && docker compose up -d
+#
+# A login is required: the container listens beyond the server itself. Put
+#   STUDY_PASSWORD=<a password>
+# in a file named .env next to this docker-compose.yml before the first start.
+#
+# `docker-compose.yml` in the repository is the same service built from a
+# local checkout instead of pulled.
+services:
+  question-bank-prep:
+    # `latest` follows main. To pin, use a release instead: `1` (every 1.x
+    # release), `1.0` (fixes only), or `1.0.0` (exactly that release).
+    image: ghcr.io/gerardwu100/question-bank-prep:latest
+    container_name: question-bank-prep
+    ports:
+      # Open to every device that can reach the server, over plain HTTP.
+      # Fine on a home network; put HTTPS in front before exposing it to the
+      # internet, or use "127.0.0.1:6848:3000" to keep it to the server itself.
+      - "6848:3000"
+    restart: unless-stopped
+    # Run as your own user so the database belongs to you and the read-only
+    # Codex login (mode 600) stays readable. Change both if `id -u` and
+    # `id -g` on the server do not print 1000.
+    user: "1000:1000"
+    environment:
+      - TZ=America/Toronto
+      # Required; read from the .env file next to this compose file.
+      - STUDY_PASSWORD=${STUDY_PASSWORD:?Set STUDY_PASSWORD in .env next to docker-compose.yml}
+    volumes:
+      # Folder on your machine, then the path inside the container. Edit the
+      # left side to keep files somewhere else; keep the right side as it is.
+      # Database and backups:
+      - $HOME/.containers/question-bank-prep:/data
+      # Question banks (one folder per topic); synced every time the app opens:
+      - $HOME/projects/cfa/question_bank:/question_bank:ro
+      # Study notes shown on the Materials page and searched by the tutor:
+      - $HOME/projects/cfa/md_materials:/materials:ro
+      # Your Codex ChatGPT login, for the tutor. Read-only: Codex on this
+      # machine keeps refreshing it; the app never does. Remove the line to
+      # run without AI.
+      - $HOME/.codex:/codex:ro
+    networks:
+      - single
+
+networks:
+  # Shared network where a reverse proxy can reach this container. Compose
+  # joins it if it exists and creates it if it does not.
+  single:
+    name: single
