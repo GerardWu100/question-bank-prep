@@ -50,3 +50,8 @@ app-data/
 logs/*.log
 test-results/
 playwright-report/
+
+# CFA study material and question banks live only in the private cfa checkout, never here.
+materials/
+md_materials/
+question_bank/
