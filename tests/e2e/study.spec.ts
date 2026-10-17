@@ -73,7 +73,9 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   expect((await state.json()).counts.unsure).toBe(1);
   // Refresh keeps the open set; Back returns to it from another page.
   await page.reload();
-  await expect(page.getByRole("button", { name: "B Four", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "B Four", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Notes", exact: true }).click();
   await page.getByRole("button", { name: "New note" }).click();
   await page.getByLabel("Title").fill("Regression checklist");
@@ -81,7 +83,9 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   await expect(page.getByText("Regression checklist")).toBeVisible();
   await page.goBack();
-  await expect(page.getByRole("button", { name: "B Four", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "B Four", exact: true }),
+  ).toBeVisible();
 });
 
 test("small viewport keeps navigation and material rendering within the viewport", async ({
@@ -90,10 +94,26 @@ test("small viewport keeps navigation and material rendering within the viewport
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByRole("navigation")).toBeVisible();
-  const fits = await page.evaluate(
-    () => document.documentElement.scrollWidth <= window.innerWidth,
+  // Name every element that sticks out, so a failure says what to fix. The
+  // navigation bar scrolls sideways on purpose and is left out.
+  const outside = await page.evaluate(() =>
+    [...document.querySelectorAll("body *")]
+      .filter(
+        (element) =>
+          !element.closest("nav") &&
+          element.getBoundingClientRect().right > window.innerWidth + 1,
+      )
+      .map(
+        (element) =>
+          `${element.tagName}.${element.className}: ${element.textContent?.slice(0, 40)}`,
+      ),
   );
-  expect(fits).toBeTruthy();
+  expect(outside).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
   await page.screenshot({
     path: testInfo.outputPath("home-mobile.png"),
     fullPage: true,

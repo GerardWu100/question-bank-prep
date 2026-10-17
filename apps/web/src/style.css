@@ -756,13 +756,17 @@ footer {
   margin: 0;
   padding: 0.35rem 0.9rem;
 }
-/* Narrow windows: the name takes its own line, then bar, count and buttons. */
+/* Narrow windows: name, then bar and count, then the buttons, each on its own line. */
 @media (max-width: 1000px) {
   .deck-row {
-    grid-template-columns: minmax(4rem, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
-  .deck-label {
+  .deck-label,
+  .deck-actions {
     grid-column: 1 / -1;
+  }
+  .deck-actions {
+    flex-wrap: wrap;
   }
 }
 .header-tools {
