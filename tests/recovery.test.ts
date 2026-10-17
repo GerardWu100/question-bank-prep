@@ -1,0 +1,22 @@
+import { afterEach, expect, test } from 'vitest';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Store } from '../apps/server/src/store.js';
+import { backupDatabase, restoreDatabase } from '../scripts/backup.js';
+const folders:string[]=[];
+afterEach(async()=>{for(const folder of folders.splice(0)) await rm(folder,{recursive:true,force:true});});
+test('online snapshot restores all record classes, preserves source bytes and refuses corrupt backup',async()=>{
+ const folder=await mkdtemp(join(tmpdir(),'study-recovery-'));folders.push(folder);
+ const source=join(folder,'source.sqlite'),snapshot=join(folder,'snapshot.sqlite'),target=join(folder,'restored.sqlite');
+ const store=new Store(source);const library=store.createLibrary('Recovery');
+ const kinds=['file','fileRevision','question','questionRevision','set','note','focus','chat'];
+ for(const kind of kinds) store.put(library.id,kind,{id:kind,content:'Source $x$ and 中文',suppressed:true,version:3});
+ await backupDatabase(source,snapshot);store.db.close();
+ await restoreDatabase(snapshot,target);const restored=new Store(target);
+ for(const kind of kinds) expect(restored.get(library.id,kind).content).toBe('Source $x$ and 中文');
+ restored.db.close();
+ await expect(restoreDatabase(snapshot,target)).rejects.toThrow();
+ const bytes=await readFile(snapshot);bytes[100]^=1;await writeFile(snapshot,bytes);
+ await expect(restoreDatabase(snapshot,join(folder,'bad.sqlite'))).rejects.toThrow('checksum');
+});

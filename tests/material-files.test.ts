@@ -1,0 +1,20 @@
+import { afterEach, expect, test } from 'vitest';
+import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hash } from '../packages/domain/src/index.js';
+import { materialPath, scanRoot, safeSave, pendingMaterialSaves, acknowledgeMaterialSave } from '../apps/server/src/material-files.js';
+const folders:string[]=[];afterEach(async()=>{for(const f of folders.splice(0))await rm(f,{recursive:true,force:true});});
+test('configured source roots reject traversal and symlinks, preserve outside edits, and expose interrupted saves',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'study-material-'));folders.push(root);const journal=join(root,'.journal');
+ await writeFile(join(root,'bank.md'),'old');await symlink('/etc/passwd',join(root,'outside.md'));
+ expect((await scanRoot(root)).map(f=>f.path)).toEqual(['bank.md']);
+ await expect(materialPath(root,'../bank.md')).rejects.toThrow();await expect(materialPath(root,'outside.md')).rejects.toThrow();
+ await expect(safeSave(root,'bank.md',hash('wrong'),'new',journal)).rejects.toMatchObject({code:'HASH_CONFLICT'});
+ expect(await readFile(join(root,'bank.md'),'utf8')).toBe('old');
+ const id=await safeSave(root,'bank.md',hash('old'),'new',journal);
+ expect(await readFile(join(root,'bank.md'),'utf8')).toBe('new');
+ expect((await pendingMaterialSaves(root,journal))[0].state).toBe('reimport');
+ await writeFile(join(root,'bank.md'),'outside edit');expect((await pendingMaterialSaves(root,journal))[0].state).toBe('conflict');
+ await acknowledgeMaterialSave(journal,id);expect(await pendingMaterialSaves(root,journal)).toEqual([]);
+});

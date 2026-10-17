@@ -1,0 +1,172 @@
+import type { FastifyInstance } from "fastify";
+import { join } from "node:path";
+import { AppError, Store } from "./store.js";
+import { hash } from "../../../packages/domain/src/index.js";
+import {
+  scanRoot,
+  safeSave,
+  acknowledgeMaterialSave,
+  pendingMaterialSaves,
+} from "./material-files.js";
+
+/** Add configured-folder operations. Clients cannot choose arbitrary host roots. */
+export function registerMaterialRoutes(
+  app: FastifyInstance,
+  store: Store,
+  root: string | undefined,
+  dataDirectory: string,
+) {
+  const journalRoot = join(dataDirectory, "material-journal");
+  const requireRoot = () => {
+    if (!root)
+      throw new AppError(
+        409,
+        "ROOT_NOT_CONFIGURED",
+        "Set MATERIAL_ROOT in the local .env file first.",
+      );
+    return root;
+  };
+  const base = "/api/libraries/:libraryId";
+  app.post(base + "/imports/root-preview", async (request: any) => {
+    const files = await scanRoot(requireRoot());
+    const preview = store.preview(request.params.libraryId, files, {
+      localRoot: true,
+    });
+    return {
+      ...preview,
+      files: preview.files.map(({ content, questions, ...file }: any) => file),
+    };
+  });
+  app.post(base + "/imports/:id/root-commit", async (request: any) => {
+    const lib = request.params.libraryId,
+      preview = store.get(lib, request.params.id, "import");
+    if (preview.committed) return preview.committed;
+    if (!preview.localRoot)
+      throw new AppError(
+        400,
+        "INVALID_PREVIEW",
+        "Expected a configured-folder preview.",
+      );
+    // One rescan covers both changed bytes and added or removed files.
+    const previewHashes = new Map<string, string>(
+      preview.files.map((p: any) => [p.path, p.hash]),
+    );
+    const current = await scanRoot(requireRoot());
+    if (
+      current.length !== previewHashes.size ||
+      current.some((f) => previewHashes.get(f.path) !== hash(f.content))
+    )
+      throw new AppError(
+        409,
+        "STALE_PREVIEW",
+        "Folder files changed after preview. Preview again.",
+      );
+    return store.db.transaction(() => {
+      const result = store.commit(
+        lib,
+        preview.id,
+        request.body?.acceptWarnings === true,
+        request.body?.identityMappings,
+      );
+      for (const file of store.list(lib, "file"))
+        if (file.local && file.active && !previewHashes.has(file.path))
+          store.deactivateFile(lib, file);
+        else if (previewHashes.has(file.path) && !file.local)
+          store.put(lib, "file", { ...file, local: true });
+      return result;
+    })();
+  });
+  app.put(base + "/files/:id/local-save", async (request: any) => {
+    const lib = request.params.libraryId,
+      file = store.get(lib, request.params.id, "file"),
+      body = request.body;
+    const operationRequest = { route: request.url, ...body };
+    // The file write is async, so check the receipt before it and record it after the commit.
+    const previous = store.receipt(body.operationId, operationRequest);
+    if (previous) return previous.response;
+    if (!file.local)
+      throw new AppError(
+        400,
+        "NOT_LOCAL",
+        "This source is stored inside the app.",
+      );
+    if (file.hash !== body.expectedHash)
+      throw new AppError(
+        409,
+        "HASH_CONFLICT",
+        "Material changed. Reload before saving.",
+        file,
+      );
+    if (typeof body.content !== "string")
+      throw new AppError(400, "INVALID_CONTENT", "Markdown text is required.");
+    const preview = store.preview(lib, [{ ...file, content: body.content }]);
+    if (!preview.canCommit || (preview.issues.length && !body.acceptWarnings))
+      throw new AppError(
+        400,
+        "IMPORT_ISSUES",
+        "Fix import issues before saving.",
+        { issues: preview.issues },
+      );
+    const journalId = await safeSave(
+      requireRoot(),
+      file.path,
+      file.hash,
+      body.content,
+      journalRoot,
+    );
+    const updated = store.operation(body.operationId, operationRequest, () => {
+      store.commit(
+        lib,
+        preview.id,
+        body.acceptWarnings === true,
+        body.identityMappings,
+      );
+      return store.put(lib, "file", {
+        ...store.get(lib, file.id, "file"),
+        local: true,
+      });
+    });
+    await acknowledgeMaterialSave(journalRoot, journalId);
+    return updated;
+  });
+  app.get("/api/material-recovery", async () => ({
+    pending: root
+      ? (await pendingMaterialSaves(root, journalRoot)).map(
+          ({ original, content, ...entry }) => entry,
+        )
+      : [],
+  }));
+  app.post(base + "/material-recovery/:id", async (request: any) => {
+    const pending = await pendingMaterialSaves(requireRoot(), journalRoot),
+      entry = pending.find((e) => e.id === request.params.id);
+    if (!entry)
+      throw new AppError(404, "NOT_FOUND", "Recovery entry not found.");
+    const file = store
+      .list(request.params.libraryId, "file")
+      .find((f) => f.local && f.path === entry.path);
+    if (!file)
+      throw new AppError(
+        409,
+        "WRONG_LIBRARY",
+        "Select the library containing this local file.",
+      );
+    if (entry.state === "conflict")
+      throw new AppError(
+        409,
+        "SOURCE_CONFLICT",
+        "External edits require manual review. The journal retains both versions.",
+      );
+    if (entry.state === "reimport") {
+      const preview = store.preview(request.params.libraryId, [
+        { ...file, content: entry.content },
+      ]);
+      store.commit(
+        request.params.libraryId,
+        preview.id,
+        request.body?.acceptWarnings === true,
+      );
+    }
+    await acknowledgeMaterialSave(journalRoot, entry.id);
+    return { recovered: true };
+  });
+}
