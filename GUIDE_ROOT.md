@@ -4,7 +4,7 @@
 
 Read README.md for running, docs/user/question-format.md (with examples/) for bank syntax, and ops/RECOVERY.md for recovery. The original implementation plan remains unchanged as the intended product contract. The app runs natively or from the `app` target of the Dockerfile; the `test` target is the reproducible Linux check. The user explicitly relaxed strict calculator isolation.
 
-The application is a TypeScript workspace: React/Vite in `apps/web`, Fastify in `apps/server`, a subscription adapter in `apps/ai-runtime`, and a disposable Pyodide worker in `apps/calculator`. `packages/domain` owns Markdown parsing and grading. Root scripts own reproducible tests, a synthetic scale benchmark, and backup/restore.
+The application is a TypeScript workspace: React/Vite in `apps/web`, Fastify in `apps/server`, a subscription adapter in `apps/ai-runtime`, and a disposable Pyodide worker in `apps/calculator`. `packages/domain` owns Markdown parsing and grading. Root scripts own reproducible tests, a synthetic scale benchmark, backup/restore, and `check-bank` (runs `parseQuestions` on bank files outside the app, for AI extraction loops).
 
 ## Durable state and behavior
 

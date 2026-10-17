@@ -129,3 +129,13 @@ Preview always lists errors (block the import) and warnings (you can accept them
 - [ ] Each `Answer` names one label.
 - [ ] Case questions sit one level below the case heading.
 - [ ] Reading material without questions is imported as **note**.
+
+## Check a bank from the command line
+
+The same parser runs without the app. It prints counts per file and every import error and warning, and also warns about duplicate question titles and questions outside a chapter. It exits with status 1 when any file has an error, and skips `README.md` files.
+
+```sh
+npm run check-bank -- path/to/bank.md path/to/folder
+```
+
+When `MATERIAL_ROOT` is set, every `.md` file in that folder and its subfolders is imported as a question bank, so keep notes and README files outside it.

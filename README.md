@@ -47,7 +47,7 @@ B
 Two pairs make four.
 ```
 
-Put `Question` headings one level below a `Case` heading to share its passage. Keep choice, answer and solution headings one level deeper than the question. Preview reports missing keys and structural errors before committing. Missing keys remain readable but cannot be graded. Choices never shuffle. Review sets retain their membership and order after answers change.
+Put `Question` headings one level below a `Case` heading to share its passage. Keep choice, answer and solution headings one level deeper than the question. Preview reports missing keys and structural errors before committing; `npm run check-bank -- <file-or-folder>` runs the same checks from the command line. Missing keys remain readable but cannot be graded. Choices never shuffle. Review sets retain their membership and order after answers change.
 
 The app tracks two distinct answers: the latest overall answer, and the answer within each set. Starting another set leaves that set blank while retaining the overall result. Sure/Unsure applies only to correct answers. A saved response means done, not mastery.
 
