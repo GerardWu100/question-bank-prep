@@ -12,12 +12,15 @@ import "katex/dist/katex.min.css";
 const ESCAPED_DOLLAR = "\uE000";
 const LITERAL_INSIDE = new Set(["inlineMath", "math", "inlineCode", "code"]);
 function restoreEscapedDollars() {
-  const visit = (node: any, literal = LITERAL_INSIDE.has(node.type)) => {
+  // Everything below a math or code node is literal, however deeply it is nested.
+  const visit = (node: any, insideLiteral = false) => {
+    const literal = insideLiteral || LITERAL_INSIDE.has(node.type);
     if (typeof node.value === "string")
       node.value = node.value.replaceAll(ESCAPED_DOLLAR, literal ? "\\$" : "$");
-    // remark-math copies the formula into data.hChildren, which rehype-katex reads.
+    // remark-math copies the formula into data.hChildren (nested for display math),
+    // which rehype-katex reads.
     node.data?.hChildren?.forEach((child: any) => visit(child, literal));
-    node.children?.forEach((child: any) => visit(child));
+    node.children?.forEach((child: any) => visit(child, literal));
   };
   return (tree: any) => visit(tree);
 }
@@ -41,10 +44,49 @@ function tidyInlineHtml() {
   };
   return (tree: any) => visit(tree);
 }
+/**
+ * Source text -> parser input. Hides escaped dollars (see above) and repairs common
+ * conversion slips around display math, each of which would otherwise swallow the rest
+ * of the page into one formula:
+ *   - an indented "$$" fence line whose partner is not indented (inside a list);
+ *   - text on the same line after an opening or closing "$$" ("$$\\begin{aligned}",
+ *     "$$ Actual P/E is…");
+ *   - text on the same line before a closing "$$" ("\\end{aligned}$$").
+ * Lines holding two "$$" (a one-line display formula) are left alone.
+ */
+function prepareMarkdown(text: string) {
+  return text
+    .replaceAll("\\$", ESCAPED_DOLLAR)
+    .replace(/^[ \t]+\$\$[ \t]*$/gm, "$$$$")
+    .replace(/^([ \t]*)\$\$[ \t]*(?=\S)(?!.*\$\$)/gm, "$1$$$$\n")
+    .replace(
+      /^(?!.*\$\$.*\$\$)(?![ \t]*\$\$)(.*\S)[ \t]*\$\$[ \t]*$/gm,
+      "$1\n$$$$",
+    );
+}
+/** Display formulas that use "&" alignment without an environment get an aligned block. */
+function alignDisplayMath() {
+  const visit = (node: any) => {
+    if (
+      node.type === "math" &&
+      node.value.includes("&") &&
+      !/\\begin\{/.test(node.value)
+    ) {
+      node.value = `\\begin{aligned}${node.value}\\end{aligned}`;
+      node.data?.hChildren?.forEach(function setText(child: any) {
+        if (child.type === "text") child.value = node.value;
+        child.children?.forEach(setText);
+      });
+    }
+    node.children?.forEach(visit);
+  };
+  return (tree: any) => visit(tree);
+}
 const remarkPlugins = [
   remarkGfm,
   remarkMath,
   restoreEscapedDollars,
+  alignDisplayMath,
   tidyInlineHtml,
 ];
 const rehypePlugins = [rehypeKatex];
@@ -162,7 +204,7 @@ export const Markdown = memo(function Markdown({
         rehypePlugins={rehypePlugins}
         components={rendered}
       >
-        {text.replaceAll("\\$", ESCAPED_DOLLAR)}
+        {prepareMarkdown(text)}
       </ReactMarkdown>
     </div>
   );

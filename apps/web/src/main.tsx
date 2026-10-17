@@ -26,6 +26,8 @@ const RUN_POLL_MS = 500;
 /** "01-quantitative-methods" -> "01 Quantitative Methods"; "qbank-2025" -> "Qbank 2025". */
 const labelOf = (slug: string) =>
   slug.replace(/-/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+/** A bank solution's last line naming its source, e.g. "*Source: Qbank 2025, …*". */
+const SOURCE_LINE = /\n?\s*\*Source:[^\n]*\*\s*$/;
 /** Reader sections shorter than this many lines are merged into the previous one. */
 const MIN_SECTION_LINES = 150;
 /** Base font sizes the A−/A+ buttons step through, in px. */
@@ -627,7 +629,6 @@ function App() {
             [
               ["wrong", "Mistakes", summary.wrong],
               ["unsure", "Unsure", summary.unsure],
-              ["flagged", "Flagged", summary.flagged],
             ] as const
           ).map(
             ([review, label, count]) =>
@@ -957,7 +958,27 @@ function App() {
         )}
         {library && page === "Practice" && !question && (
           <>
-            <h1>Practice</h1>
+            <div className="row">
+              <h1>Practice</h1>
+              {/* Flagged questions are few, so they get one central set across all topics. */}
+              {sumRows(overview.catalog ?? []).flagged > 0 && (
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(() =>
+                      openDeck(
+                        { topic: "" },
+                        sumRows(overview.catalog ?? []).flagged,
+                        "flagged",
+                      ),
+                    )
+                  }
+                >
+                  ★ Flagged {sumRows(overview.catalog ?? []).flagged}
+                </button>
+              )}
+            </div>
             <div className="stats">
               {(["unanswered", "correct", "unsure", "wrong"] as const).map(
                 (key) => (
@@ -1170,7 +1191,6 @@ function App() {
                 <h2>Source removed</h2>
               ) : (
                 <>
-                  <h1>{question.title}</h1>
                   {question.caseText && (
                     <details
                       open={caseOpen}
@@ -1248,21 +1268,10 @@ function App() {
                           Answer: {question.answerKey}
                         </p>
                       )}
-                      {question.answerKey &&
-                        draft &&
-                        draft !== question.answerKey && (
-                          // A slip of the finger should not land in Mistakes.
-                          <button
-                            className="secondary"
-                            disabled={busy}
-                            onClick={() => answer(question.answerKey, "sure")}
-                          >
-                            I misclicked · count as correct
-                          </button>
-                        )}
                       <Markdown
                         text={
-                          question.solution ||
+                          // The trailing "*Source: …*" line is for tracing, not for reading.
+                          question.solution.replace(SOURCE_LINE, "").trim() ||
                           "No source solution is available."
                         }
                       />
@@ -1279,6 +1288,16 @@ function App() {
               >
                 ← Previous
               </button>
+              {question.answerKey && draft && draft !== question.answerKey && (
+                // A slip of the finger should not land in Mistakes.
+                <button
+                  className="quiet small"
+                  disabled={busy}
+                  onClick={() => answer(question.answerKey, "sure")}
+                >
+                  Misclicked
+                </button>
+              )}
               <button
                 disabled={position === activeSet.questionIds.length - 1 || busy}
                 onClick={() => void run(() => navigate(position + 1))}

@@ -36,9 +36,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await expect(page.getByText("Two pairs make four.")).toBeVisible();
   // A wrong answer from a slip can be corrected in one click.
-  await page
-    .getByRole("button", { name: "I misclicked · count as correct" })
-    .click();
+  await page.getByRole("button", { name: "Misclicked" }).click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "B Four", exact: true }),
@@ -75,7 +73,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   expect((await state.json()).counts.unsure).toBe(1);
   // Refresh keeps the open set; Back returns to it from another page.
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Question 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "B Four", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Notes", exact: true }).click();
   await page.getByRole("button", { name: "New note" }).click();
   await page.getByLabel("Title").fill("Regression checklist");
@@ -83,7 +81,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   await expect(page.getByText("Regression checklist")).toBeVisible();
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "Question 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "B Four", exact: true })).toBeVisible();
 });
 
 test("small viewport keeps navigation and material rendering within the viewport", async ({

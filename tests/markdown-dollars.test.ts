@@ -30,3 +30,34 @@ test("<br> becomes a line break and HTML comments disappear", () => {
   expect(html).not.toContain("page 33");
   expect(html).not.toContain("&lt;br&gt;");
 });
+
+test("an escaped dollar inside display math renders without a KaTeX error", () => {
+  const html = render("$$\nPVD=\\frac{\\$0.3}{1.04^{20/365}}=\\$0.795\n$$");
+  expect(html).not.toContain("katex-error");
+  expect(html).toContain("katex-display");
+});
+
+test("prose after a closing $$ on the same line stays outside the formula", () => {
+  const html = render(
+    "$$\nx=1\n$$ Actual P/E is higher.\n\nNext paragraph $y$.",
+  );
+  expect(html).not.toContain("katex-error");
+  expect(html).toContain("Actual P/E is higher.");
+  expect(html.match(/class="katex"/g)).toHaveLength(2);
+});
+
+test("display math with & alignment renders without an environment", () => {
+  const html = render("$$\na&=b+c\\\\\nd&=e\n$$");
+  expect(html).not.toContain("katex-error");
+});
+
+test("text glued to $$ fences and indented fences inside lists still render", () => {
+  const glued = render(
+    "$$\\begin{aligned}\na&=b\\\\\nc&=d\\end{aligned}$$\n\nAfter $x$.",
+  );
+  expect(glued).not.toContain("katex-error");
+  expect(glued).toContain("After");
+  const listed = render("1. Item\n   $$\nx=1\n$$\n\n2. Next $y$.");
+  expect(listed).not.toContain("katex-error");
+  expect(listed.match(/class="katex"/g)).toHaveLength(2);
+});

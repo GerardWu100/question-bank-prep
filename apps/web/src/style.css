@@ -554,6 +554,11 @@ summary {
   overflow-x: auto;
   max-width: 100%;
 }
+/* Wide formulas scroll sideways only; tall glyphs must not add a vertical scrollbar. */
+.katex-display {
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
 .markdown pre,
 pre {
   background: var(--c-eef0e9);
@@ -804,4 +809,8 @@ footer {
 .mermaid-diagram svg {
   max-width: 100%;
   height: auto;
+}
+button.small {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
 }
