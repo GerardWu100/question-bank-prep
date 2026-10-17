@@ -80,6 +80,34 @@ describe('durable tutor runs', () => {
       expect(effort).toBe('high');
     } finally { await app.close(); }
   });
+  it('gives the tutor your answer and result after you answer, and withholds them in hint mode', async () => {
+    const prompts: string[] = [];
+    const provider = { status: async () => ({ available: true, models: [] }), async *stream(request: any) {
+      prompts.push(request.systemPrompt);
+      yield { type: 'text', text: 'ok' };
+      yield { type: 'done', model: 'gpt-6.1-sol', provider: 'openai-codex' };
+    } };
+    const { app, store } = await buildApp({ provider });
+    try {
+      const library = store.createLibrary('Context test');
+      const preview = store.preview(library.id, [{ path: 'bank.md', content: '## Question 1\nTwo plus two?\n### Choices\nA. 3\nB. 4\nC. 5\n### Answer\nB\n' }]);
+      store.commit(library.id, preview.id, true);
+      const question = store.list(library.id, 'question')[0];
+      const base = `/api/libraries/${library.id}`;
+      const chat = (await app.inject({ method: 'POST', url: `${base}/chats`, payload: { questionId: question.id } })).json();
+      const send = async (operationId: string) => {
+        await app.inject({ method: 'POST', url: `${base}/chats/${chat.id}/messages`, payload: { text: 'Help', operationId, stream: true } });
+        await new Promise(resolve => setTimeout(resolve, 30));
+      };
+      await send('before-answer');
+      store.answer(library.id, question.id, { operationId: 'answer', expectedVersion: 0, selection: 'A' });
+      await send('after-answer');
+      expect(prompts[0]).toContain('Hint mode');
+      expect(prompts[0]).not.toContain('"yourAnswer"');
+      expect(prompts[1]).toContain('"yourAnswer":"A"');
+      expect(prompts[1]).toContain('"yourResult":"wrong"');
+    } finally { await app.close(); }
+  });
   it('retains partial text as interrupted and never invents terminal success', async () => {
     const provider = { status: async () => ({ available: true, models: [] }), async *stream() { yield { type: 'text', text: 'Partial' }; } };
     const { app } = await buildApp({ provider });

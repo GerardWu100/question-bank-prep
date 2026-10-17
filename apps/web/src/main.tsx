@@ -30,7 +30,7 @@ const labelOf = (slug: string) =>
 const HINT_REQUEST =
   "Give me one hint for this question. Do not reveal the answer.";
 const EXPLAIN_ANSWER_REQUEST =
-  "Explain this question: the concept and LOS it tests, why the correct answer is right, and why each other choice is wrong. Show any calculation.";
+  "Explain this question: the concept and LOS it tests, why the correct answer is right, and why each other choice is wrong, starting with the one I chose if it was wrong. Show any calculation.";
 const EXPLAIN_SECTION_REQUEST =
   "Explain this section in plain language: the key ideas, each formula with every symbol defined, and one short worked example with numbers.";
 /** A bank solution's last line naming its source, e.g. "*Source: Qbank 2025, …*". */
@@ -756,25 +756,28 @@ function App() {
             </details>
           )}
           <Markdown text={m.content || (m.status === "running" ? "…" : "")} />
-          {m.sources?.length > 0 && (
+          {/* The question you are on is not worth a citation chip. */}
+          {m.sources?.some((source: any) => source.id !== chat.questionId) && (
             <div className="chips">
-              {m.sources.map((source: any) => (
-                <button
-                  className="secondary"
-                  key={source.id}
-                  onClick={() =>
-                    void run(async () =>
-                      setCitation(
-                        await api(
-                          `${scope}/chats/${chat.id}/messages/${m.id}/sources/${source.id}`,
+              {m.sources
+                .filter((source: any) => source.id !== chat.questionId)
+                .map((source: any) => (
+                  <button
+                    className="secondary"
+                    key={source.id}
+                    onClick={() =>
+                      void run(async () =>
+                        setCitation(
+                          await api(
+                            `${scope}/chats/${chat.id}/messages/${m.id}/sources/${source.id}`,
+                          ),
                         ),
-                      ),
-                    )
-                  }
-                >
-                  {source.title || source.id}
-                </button>
-              ))}
+                      )
+                    }
+                  >
+                    {source.title || source.id}
+                  </button>
+                ))}
             </div>
           )}
           {m.role === "assistant" && m.status === "completed" && (
