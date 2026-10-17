@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
+import { execFile } from "node:child_process";
 import { AppError } from "./store.js";
 
 /** File types the reader serves, by extension. SVG is left out: it can carry scripts. */
@@ -44,6 +45,148 @@ async function readingPath(root: string, path: string): Promise<string> {
   return target;
 }
 
+/** Every Markdown file under the reading root, as sorted relative paths. */
+export async function listReadingFiles(root: string): Promise<string[]> {
+  const base = await realpath(root);
+  const files: string[] = [];
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
+      const target = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(target);
+      else if (entry.isFile() && entry.name.endsWith(".md"))
+        files.push(relative(base, target));
+    }
+  };
+  await visit(base);
+  return files.sort((a, b) => a.localeCompare(b));
+}
+
+/** Most search hits the tutor gets per query, and longest snippet per hit. */
+const MAX_SEARCH_HITS = 20;
+const SNIPPET_CHARACTERS = 240;
+/** Most lines the tutor may read in one call. */
+const MAX_READ_LINES = 200;
+
+/**
+ * Plain-text search of the study notes for the tutor (like grep, no index).
+ * A line matches when it contains every word of the query, ignoring case.
+ * Returns [{ path, line, section, text }]: line is 1-based, section is the nearest
+ * heading above it, text is the trimmed line (cut to SNIPPET_CHARACTERS).
+ */
+export async function searchReading(root: string, query: string) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const hits: { path: string; line: number; section: string; text: string }[] =
+    [];
+  if (!words.length) return hits;
+  for (const path of await listReadingFiles(root)) {
+    const lines = (await readFile(await readingPath(root, path), "utf8")).split(
+      "\n",
+    );
+    let section = "";
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      if (/^#{1,6}\s/.test(line)) section = line.replace(/^#+\s*/, "").trim();
+      const lower = line.toLowerCase();
+      if (words.every((word) => lower.includes(word))) {
+        hits.push({
+          path,
+          line: index + 1,
+          section,
+          text: line.trim().slice(0, SNIPPET_CHARACTERS),
+        });
+        if (hits.length >= MAX_SEARCH_HITS) return hits;
+      }
+    }
+  }
+  return hits;
+}
+
+/** Lines fromLine.. (1-based, at most MAX_READ_LINES) of one study-notes file, numbered. */
+export async function readReadingLines(
+  root: string,
+  path: string,
+  fromLine: number,
+  count: number,
+) {
+  const lines = (await readFile(await readingPath(root, path), "utf8")).split(
+    "\n",
+  );
+  const start = Math.max(1, Math.floor(fromLine));
+  const end = Math.min(
+    lines.length,
+    start + Math.min(MAX_READ_LINES, Math.max(1, Math.floor(count))) - 1,
+  );
+  return {
+    path,
+    fromLine: start,
+    toLine: end,
+    totalLines: lines.length,
+    text: lines
+      .slice(start - 1, end)
+      .map((line, i) => `${start + i}: ${line}`)
+      .join("\n"),
+  };
+}
+
+/** Ripgrep output and run-time limits for one tutor call. */
+const MAX_RG_OUTPUT = 20_000;
+const RG_TIMEOUT_MS = 10_000;
+
+/**
+ * Run ripgrep in the notes folder for the tutor (Codex models know rg well).
+ * No shell: arguments go straight to rg with the notes folder as the working directory.
+ * Refused: options that run other programs (--pre*, -z/--search-zip decompressors),
+ * config files, absolute paths and
+ * "..", so rg only reads inside the folder. Output is cut to MAX_RG_OUTPUT characters.
+ * Returns { output, truncated } or throws when rg is missing or an argument is refused.
+ */
+export async function runRipgrep(root: string, args: string[]) {
+  for (const arg of args)
+    if (
+      typeof arg !== "string" ||
+      /^--(pre|config|ignore-file|search-zip)/.test(arg) ||
+      /^-[a-zA-Z]*z/.test(arg) ||
+      arg.startsWith("/") ||
+      arg.split(/[\\/=]/).includes("..")
+    )
+      throw new AppError(
+        400,
+        "INVALID_ARGUMENT",
+        `Argument not allowed: ${arg}`,
+      );
+  const base = await realpath(root);
+  return new Promise<{ output: string; truncated: boolean }>(
+    (resolvePromise, reject) => {
+      execFile(
+        "rg",
+        ["--no-config", "--no-follow", ...args],
+        {
+          cwd: base,
+          timeout: RG_TIMEOUT_MS,
+          maxBuffer: 10_000_000,
+          env: { PATH: process.env.PATH ?? "" },
+        },
+        (error: any, stdout) => {
+          // Exit code 1 means "no matches", which is a normal answer.
+          if (error && error.code !== 1)
+            return reject(
+              new Error(
+                error.code === "ENOENT"
+                  ? "rg is not installed"
+                  : String(error.message).slice(0, 300),
+              ),
+            );
+          resolvePromise({
+            output: stdout.slice(0, MAX_RG_OUTPUT),
+            truncated: stdout.length > MAX_RG_OUTPUT,
+          });
+        },
+      );
+    },
+  );
+}
+
 /**
  * Read-only access to a reference folder (READING_ROOT), such as converted study notes.
  * Nothing here writes: the folder is browsed and rendered, never imported or edited.
@@ -57,22 +200,7 @@ export function registerReadingRoutes(
 ) {
   app.get("/api/reading", async () => {
     if (!root) return { configured: false, files: [] };
-    const base = await realpath(root);
-    const files: string[] = [];
-    const visit = async (directory: string): Promise<void> => {
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
-        if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
-        const target = join(directory, entry.name);
-        if (entry.isDirectory()) await visit(target);
-        else if (entry.isFile() && entry.name.endsWith(".md"))
-          files.push(relative(base, target));
-      }
-    };
-    await visit(base);
-    return {
-      configured: true,
-      files: files.sort((a, b) => a.localeCompare(b)),
-    };
+    return { configured: true, files: await listReadingFiles(root) };
   });
   app.get("/api/reading/file", async (request: any, reply) => {
     if (!root)

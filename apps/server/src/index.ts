@@ -25,6 +25,9 @@ const { app, store } = await buildApp({
   logger: true,
   provider: new SubscriptionProvider(),
   calculator: calculate,
+  readingRoot: process.env.READING_ROOT
+    ? resolve(root, process.env.READING_ROOT)
+    : undefined,
 });
 registerMaterialRoutes(
   app,

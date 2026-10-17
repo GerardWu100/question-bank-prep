@@ -23,6 +23,8 @@ export async function buildApp(
     logger?: boolean;
     provider?: any;
     calculator?: (request: any) => Promise<any>;
+    /** READING_ROOT: study notes the tutor may search (read-only). */
+    readingRoot?: string;
   } = {},
 ) {
   const app = Fastify({

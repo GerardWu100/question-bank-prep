@@ -26,6 +26,13 @@ const RUN_POLL_MS = 500;
 /** "01-quantitative-methods" -> "01 Quantitative Methods"; "qbank-2025" -> "Qbank 2025". */
 const labelOf = (slug: string) =>
   slug.replace(/-/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+/** One-click tutor requests behind the Hint and Explain buttons. */
+const HINT_REQUEST =
+  "Give me one hint for this question. Do not reveal the answer.";
+const EXPLAIN_ANSWER_REQUEST =
+  "Explain this question: the concept and LOS it tests, why the correct answer is right, and why each other choice is wrong. Show any calculation.";
+const EXPLAIN_SECTION_REQUEST =
+  "Explain this section in plain language: the key ideas, each formula with every symbol defined, and one short worked example with numbers.";
 /** A bank solution's last line naming its source, e.g. "*Source: Qbank 2025, …*". */
 const SOURCE_LINE = /\n?\s*\*Source:[^\n]*\*\s*$/;
 /** Reader sections shorter than this many lines are merged into the previous one. */
@@ -680,6 +687,63 @@ function App() {
       </div>
     );
   };
+  /** Send one message to the tutor in the current place (question, section, or Ask AI). */
+  const sendToTutor = (text: string) =>
+    run(async () => {
+      let current = chat;
+      // Under a practice question or a material section, the conversation belongs there.
+      if (!current)
+        current = await api(
+          `${scope}/chats`,
+          page === "Practice" && question
+            ? {
+                title: question.title,
+                kind: "question",
+                setId: activeSet.id,
+                questionId: question.id,
+              }
+            : page === "Materials" && readingPath
+              ? {
+                  title: `${readingLabel(readingPath)} · ${sectionKey}`,
+                  readingPath,
+                  readingTitle: sectionKey,
+                }
+              : { title: prompt.slice(0, 60), kind: "ask" },
+        );
+      setChat(current);
+      setPrompt("");
+      try {
+        const result = await api(`${scope}/chats/${current.id}/messages`, {
+          text,
+          model,
+          stream: true,
+          // The open section is the tutor's context for a material chat.
+          ...(current.readingPath
+            ? { material: sections[readingSection]?.text ?? "" }
+            : {}),
+          ...(chatSetId(current) ? { setId: chatSetId(current) } : {}),
+          operationId: operation(),
+        });
+        if (result.run?.id) {
+          setActiveRun(result.run.id);
+          let state = result.run;
+          while (state.status === "running") {
+            await new Promise((resolve) => setTimeout(resolve, RUN_POLL_MS));
+            state = await api(`${scope}/runs/${result.run.id}`);
+            setChat(await api(chatUrl(current)));
+          }
+          if (state.error)
+            setError(
+              typeof state.error === "string"
+                ? state.error
+                : state.error.message,
+            );
+        }
+      } finally {
+        setActiveRun(null);
+        setChat(await api(chatUrl(current)));
+      }
+    });
   const tutorConversation = (
     <>
       {chat?.messages?.map((m: any) => (
@@ -738,67 +802,7 @@ function App() {
         className="composer"
         onSubmit={(e) => {
           e.preventDefault();
-          void run(async () => {
-            let current = chat;
-            // Under a practice question or a material section, the conversation belongs there.
-            if (!current)
-              current = await api(
-                `${scope}/chats`,
-                page === "Practice" && question
-                  ? {
-                      title: question.title,
-                      kind: "question",
-                      setId: activeSet.id,
-                      questionId: question.id,
-                    }
-                  : page === "Materials" && readingPath
-                    ? {
-                        title: `${readingLabel(readingPath)} · ${sectionKey}`,
-                        readingPath,
-                        readingTitle: sectionKey,
-                      }
-                    : { title: prompt.slice(0, 60), kind: "ask" },
-              );
-            setChat(current);
-            const text = prompt;
-            setPrompt("");
-            try {
-              const result = await api(
-                `${scope}/chats/${current.id}/messages`,
-                {
-                  text,
-                  model,
-                  stream: true,
-                  // The open section is the tutor's context for a material chat.
-                  ...(current.readingPath
-                    ? { material: sections[readingSection]?.text ?? "" }
-                    : {}),
-                  ...(chatSetId(current) ? { setId: chatSetId(current) } : {}),
-                  operationId: operation(),
-                },
-              );
-              if (result.run?.id) {
-                setActiveRun(result.run.id);
-                let state = result.run;
-                while (state.status === "running") {
-                  await new Promise((resolve) =>
-                    setTimeout(resolve, RUN_POLL_MS),
-                  );
-                  state = await api(`${scope}/runs/${result.run.id}`);
-                  setChat(await api(chatUrl(current)));
-                }
-                if (state.error)
-                  setError(
-                    typeof state.error === "string"
-                      ? state.error
-                      : state.error.message,
-                  );
-              }
-            } finally {
-              setActiveRun(null);
-              setChat(await api(chatUrl(current)));
-            }
-          });
+          void sendToTutor(prompt);
         }}
       >
         <textarea
@@ -829,6 +833,33 @@ function App() {
           <span role="status" className="muted">
             {activeRun ? "Thinking…" : page === "Practice" ? "" : saveStatus}
           </span>
+          {page === "Practice" && question && !submitted && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => void sendToTutor(HINT_REQUEST)}
+            >
+              Hint
+            </button>
+          )}
+          {((page === "Practice" && question && submitted) ||
+            (page === "Materials" && readingPath)) && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                void sendToTutor(
+                  page === "Practice"
+                    ? EXPLAIN_ANSWER_REQUEST
+                    : EXPLAIN_SECTION_REQUEST,
+                )
+              }
+            >
+              Explain
+            </button>
+          )}
           <button disabled={busy || !prompt.trim()}>Send</button>
           {activeRun && (
             <button
