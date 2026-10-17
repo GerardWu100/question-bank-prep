@@ -410,3 +410,24 @@ describe("HTTP boundaries", () => {
     await app.close();
   });
 });
+
+describe("login cookie behind an HTTPS proxy", () => {
+  it("is Secure only when the proxy is trusted and says HTTPS", async () => {
+    const login = async (trustProxy: boolean) => {
+      const { app } = await buildApp({ password: "pw", trustProxy });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/session",
+          headers: { "x-forwarded-proto": "https" },
+          payload: { password: "pw" },
+        });
+        return String(response.headers["set-cookie"]);
+      } finally {
+        await app.close();
+      }
+    };
+    expect(await login(true)).toContain("Secure");
+    expect(await login(false)).not.toContain("Secure");
+  });
+});

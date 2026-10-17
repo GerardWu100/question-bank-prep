@@ -37,6 +37,7 @@ const { app, store } = await buildApp({
   provider: new SubscriptionProvider(),
   calculator: calculate,
   readingRoot,
+  trustProxy: process.env.TRUST_PROXY === "true",
 });
 registerMaterialRoutes(app, store, materialRoot, dataDirectory);
 registerReadingRoutes(app, readingRoot);

@@ -56,7 +56,8 @@ docker run -d --name question-bank-prep --restart unless-stopped \
 |---|---|---|
 | The left side of each volume line | Those are the folders on your computer | Your `question_bank`, `md_materials` and Codex folders; leave out the notes or Codex line to run without that feature |
 | Run `id -u` and `id -g` | The database should belong to you, and the Codex login is readable only by you | If either is not `1000`, change `user:` |
-| `STUDY_PASSWORD` | The container listens beyond the server itself, so the app refuses to start without a password | Set it in `.env` |
+| `STUDY_PASSWORD` | The container listens beyond the server itself, so the app refuses to start without a password (Compose also refuses to start without it) | Set it in `.env` |
+| `TRUST_PROXY` | Behind a reverse proxy that serves HTTPS, the login cookie should be marked Secure | Set `TRUST_PROXY=true` only in that case; leave `false` when the app is reached directly |
 
 Then open **`http://<server address>:6848`** and sign in. The question folder syncs every time the app opens; the database lives in `/data`.
 

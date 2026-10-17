@@ -25,11 +25,18 @@ export async function buildApp(
     calculator?: (request: any) => Promise<any>;
     /** READING_ROOT: study notes the tutor may search (read-only). */
     readingRoot?: string;
+    /**
+     * Behind a reverse proxy that terminates HTTPS: read X-Forwarded-Proto/-For so the
+     * session cookie is marked Secure and rate limits see the real client address.
+     * Leave off when the app is reached directly, or clients could fake those headers.
+     */
+    trustProxy?: boolean;
   } = {},
 ) {
   const app = Fastify({
     logger: options.logger ?? false,
     bodyLimit: 12_000_000,
+    trustProxy: options.trustProxy ?? false,
   });
   const store = new Store(options.databasePath ?? ":memory:");
   const sessions = new Map<string, number>();

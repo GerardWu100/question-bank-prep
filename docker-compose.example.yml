@@ -30,6 +30,9 @@ services:
       - TZ=America/Toronto
       # Required; read from the .env file next to this compose file.
       - STUDY_PASSWORD=${STUDY_PASSWORD:?Set STUDY_PASSWORD in .env next to docker-compose.yml}
+      # Set to true only when a reverse proxy serves this app over HTTPS: the
+      # login cookie is then marked Secure. Keep false when reached directly.
+      - TRUST_PROXY=false
     volumes:
       # Folder on your machine, then the path inside the container. Edit the
       # left side to keep files somewhere else; keep the right side as it is.
