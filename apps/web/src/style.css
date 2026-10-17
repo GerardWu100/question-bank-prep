@@ -532,3 +532,58 @@ footer {
   margin-bottom: 1rem;
   font-size: 0.9rem;
 }
+/* Practice home: one progress line per source and chapter. */
+.deck-source {
+  border-top: 1px solid #dedfd6;
+  padding: 0.4rem 0;
+}
+.deck-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(6rem, 14rem) 7.5rem auto;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  padding: 0.35rem 0 0.35rem 1.2rem;
+}
+.deck-row.strong {
+  padding-left: 0;
+  font-weight: 600;
+}
+.deck-bar {
+  display: flex;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #e4e4dc;
+  overflow: hidden;
+}
+.deck-bar .correct {
+  background: #6f9f73;
+}
+.deck-bar .unsure {
+  background: #c4a052;
+}
+.deck-bar .wrong {
+  background: #b5675b;
+}
+.deck-count {
+  font-variant-numeric: tabular-nums;
+  color: #5d655f;
+  font-size: 0.9rem;
+}
+.deck-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.deck-actions button {
+  white-space: nowrap;
+  margin: 0;
+  padding: 0.35rem 0.9rem;
+}
+@media (max-width: 700px) {
+  .deck-row {
+    grid-template-columns: 1fr auto;
+  }
+  .deck-bar {
+    grid-column: 1 / -1;
+  }
+}

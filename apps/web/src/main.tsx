@@ -2,13 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, ApiError, operation } from "./api";
 import { Markdown } from "./Markdown";
-import CodeMirror from "@uiw/react-codemirror";
-import { markdown } from "@codemirror/lang-markdown";
 import "./style.css";
 
 const pages = [
   "Practice",
-  "Progress",
   "Ask AI",
   "Notes",
   "Materials",
@@ -23,6 +20,20 @@ const RUN_POLL_MS = 500;
 /** "01-quantitative-methods" -> "01 Quantitative Methods"; "qbank-2025" -> "Qbank 2025". */
 const labelOf = (slug: string) =>
   slug.replace(/-/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+/** "Chapter LM01 Basics…" -> "LM01 Basics…". */
+const chapterLabel = (chapter: string) => chapter.replace(/^Chapter\s+/i, "");
+/** Sum catalog rows (topic/source/chapter progress) into one deck summary. */
+const sumRows = (rows: any[]) =>
+  rows.reduce(
+    (sum, row) => ({
+      total: sum.total + row.total,
+      done: sum.done + row.done,
+      correct: sum.correct + row.correct,
+      unsure: sum.unsure + row.unsure,
+      wrong: sum.wrong + row.wrong,
+    }),
+    { total: 0, done: 0, correct: 0, unsure: 0, wrong: 0 },
+  );
 /** URL hash for a view, so refresh and the browser Back button keep the place. */
 const hashFor = (page: Page, setId?: string) =>
   `#/${page.toLowerCase().replace(/ /g, "-")}${setId ? `/${setId}` : ""}`;
@@ -63,14 +74,9 @@ function App() {
     [source, setSource] = useState(""),
     [chapter, setChapter] = useState(""),
     [noteDraft, setNoteDraft] = useState<any>(null);
-  const [files, setFiles] = useState<any[]>([]),
-    [file, setFile] = useState<any>(null),
-    [content, setContent] = useState(""),
-    [preview, setPreview] = useState(false),
-    [importPreview, setImportPreview] = useState<any>(null),
+  const [importPreview, setImportPreview] = useState<any>(null),
     [importPath, setImportPath] = useState("questions.md"),
     [importContent, setImportContent] = useState(""),
-    [focus, setFocus] = useState<any[]>([]),
     [chats, setChats] = useState<any[]>([]),
     [chat, setChat] = useState<any>(null),
     [prompt, setPrompt] = useState(""),
@@ -129,8 +135,6 @@ function App() {
     setLibraries(data.libraries);
     if (data.libraries.length) setLibrary(data.libraries[0].id);
   };
-  const loadFocus = async () => setFocus((await api(`${scope}/focus`)).items);
-  const loadFiles = async () => setFiles((await api(`${scope}/files`)).files);
   const showImportPreview = (next: any) => {
     setImportPreview(next);
     setIdentityMappings({});
@@ -170,9 +174,7 @@ function App() {
   useEffect(() => {
     if (!library) return;
     void run(async () => {
-      if (page === "Materials") await loadFiles();
       if (page === "Notes") setNotes((await api(`${scope}/notes`)).notes);
-      if (page === "Progress") await loadFocus();
       if (page === "History") setChats((await api(`${scope}/chats`)).chats);
       if (page === "Settings" || page === "Ask AI" || page === "Practice")
         await Promise.all([
@@ -219,7 +221,18 @@ function App() {
     setPage(target);
   };
   const openSet = async (id: string) => {
-    const set = await api(`${scope}/sets/${id}`);
+    let set = await api(`${scope}/sets/${id}`);
+    const firstOpen = set.itemStatuses.indexOf("unanswered");
+    if (set.itemStatuses[set.cursor] !== "unanswered" && firstOpen >= 0)
+      set = await api(
+        `${scope}/sets/${id}`,
+        {
+          cursor: firstOpen,
+          expectedVersion: set.version,
+          operationId: operation(),
+        },
+        "PATCH",
+      );
     setActiveSet(set);
     await loadQuestion(set, set.cursor || 0);
     setPage("Practice");
@@ -326,20 +339,73 @@ function App() {
     setSaveStatus("Saved");
     await refresh();
   };
-  const createSet = async (inFocus = false) => {
+  /**
+   * Open the practice set for one topic / source / chapter. The deck's set is reused while
+   * it still holds every question (so its place is kept); "mistakes" is always rebuilt.
+   */
+  const openDeck = async (
+    deck: { topic: string; source?: string; chapter?: string },
+    total: number,
+    review = false,
+  ) => {
+    const filters = {
+      topic: deck.topic,
+      source: deck.source ?? "",
+      chapter: deck.chapter ?? "",
+      statuses: review ? ["wrong", "unsure"] : [],
+    };
+    const existing =
+      !review &&
+      overview.sets.find(
+        (s: any) =>
+          s.count === total &&
+          s.filters?.topic === filters.topic &&
+          (s.filters?.source ?? "") === filters.source &&
+          (s.filters?.chapter ?? "") === filters.chapter &&
+          !s.filters?.statuses?.length &&
+          !s.filters?.query &&
+          !s.filters?.flagged,
+      );
+    if (existing) return openSet(existing.id);
     const set = await api(`${scope}/sets`, {
       operationId: operation(),
-      title: inFocus
-        ? "Focus practice"
-        : [
-            topic && labelOf(topic),
-            source && labelOf(source),
-            chapter,
-            statuses.length && statuses.join(" + "),
-          ]
-            .filter(Boolean)
-            .join(" · ") || "Practice set",
-      filters: { statuses, flagged, inFocus, query, topic, source, chapter },
+      title: [
+        labelOf(deck.topic),
+        deck.source && labelOf(deck.source),
+        deck.chapter && chapterLabel(deck.chapter),
+        review && "Mistakes",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      filters,
+      order: "source",
+    });
+    await refresh();
+    await openSet(set.id);
+  };
+  const createSet = async () => {
+    const filters = { statuses, flagged, query, topic, source, chapter };
+    // The same filters reopen their earlier set (and its place) instead of piling up copies.
+    const existing =
+      order === "source" &&
+      overview.sets.find(
+        (s: any) =>
+          s.count === eligibleCount &&
+          JSON.stringify(s.filters) === JSON.stringify(filters),
+      );
+    if (existing) return openSet(existing.id);
+    const set = await api(`${scope}/sets`, {
+      operationId: operation(),
+      title:
+        [
+          topic && labelOf(topic),
+          source && labelOf(source),
+          chapter && chapterLabel(chapter),
+          statuses.length && statuses.join(" + "),
+        ]
+          .filter(Boolean)
+          .join(" · ") || "Practice set",
+      filters,
       order,
       seed: Math.floor(Math.random() * 2147483647),
     });
@@ -369,33 +435,64 @@ function App() {
     source,
     chapter,
   ]);
-  const saveMaterial = async (acceptWarnings = false): Promise<void> => {
-    try {
-      const saved = await api(
-        `${scope}/files/${file.id}${file.local ? "/local-save" : ""}`,
-        {
-          content,
-          expectedHash: file.hash,
-          operationId: operation(),
-          acceptWarnings,
-        },
-        "PUT",
-      );
-      setFile(saved);
-      setSaveStatus("Saved");
-      await refresh();
-    } catch (e) {
-      const issues = (e as ApiError).current?.issues;
-      if ((e as ApiError).code !== "IMPORT_ISSUES" || acceptWarnings || !issues)
-        throw e;
-      const list = issues
-        .map((issue: any) => `Line ${issue.line}: ${issue.message}`)
-        .join("\n");
-      if (issues.some((issue: any) => issue.severity === "error"))
-        throw new Error(`Fix these issues before saving:\n${list}`);
-      if (window.confirm(`Save with these warnings?\n\n${list}`))
-        await saveMaterial(true);
-    }
+  // catalog rows -> [topic, [source, rows sorted by chapter][]][]
+  const deckGroups: [string, [string, any[]][]][] = [];
+  for (const row of overview.catalog ?? []) {
+    let topicEntry = deckGroups.find(([t]) => t === row.topic);
+    if (!topicEntry) deckGroups.push((topicEntry = [row.topic, []]));
+    let sourceEntry = topicEntry[1].find(([src]) => src === row.source);
+    if (!sourceEntry) topicEntry[1].push((sourceEntry = [row.source, []]));
+    sourceEntry[1].push(row);
+  }
+  /** One progress line with Start/Continue and, when there are any, Mistakes. */
+  const deckRow = (
+    label: string,
+    summary: ReturnType<typeof sumRows>,
+    deck: { topic: string; source?: string; chapter?: string },
+    strong = false,
+  ) => {
+    const mistakes = summary.wrong + summary.unsure;
+    const share = (n: number) => `${(100 * n) / summary.total}%`;
+    return (
+      <div
+        className={`deck-row${strong ? " strong" : ""}`}
+        key={`${deck.source}:${deck.chapter ?? ""}`}
+      >
+        <span className="deck-label">{label}</span>
+        <span className="deck-bar" aria-hidden="true">
+          <span className="correct" style={{ width: share(summary.correct) }} />
+          <span className="unsure" style={{ width: share(summary.unsure) }} />
+          <span className="wrong" style={{ width: share(summary.wrong) }} />
+        </span>
+        <span className="deck-count">
+          {summary.done}/{summary.total}
+          {summary.done > 0 &&
+            ` · ${Math.round((100 * summary.correct) / summary.done)}%`}
+        </span>
+        <span className="deck-actions">
+          <button
+            className={strong ? "" : "secondary"}
+            disabled={busy}
+            onClick={() => void run(() => openDeck(deck, summary.total))}
+          >
+            {summary.done === 0
+              ? "Start"
+              : summary.done < summary.total
+                ? "Continue"
+                : "Review"}
+          </button>
+          {mistakes > 0 && (
+            <button
+              className="quiet"
+              disabled={busy}
+              onClick={() => void run(() => openDeck(deck, mistakes, true))}
+            >
+              Mistakes {mistakes}
+            </button>
+          )}
+        </span>
+      </div>
+    );
   };
   const tutorConversation = (
     <>
@@ -588,15 +685,17 @@ function App() {
         )}
       </header>
       <nav aria-label="Main navigation">
-        {pages.map((p) => (
-          <button
-            className={page === p ? "active" : ""}
-            key={p}
-            onClick={() => setPage(p)}
-          >
-            {p}
-          </button>
-        ))}
+        {pages
+          .filter((p) => p !== "Materials" || !materialRoot)
+          .map((p) => (
+            <button
+              className={page === p ? "active" : ""}
+              key={p}
+              onClick={() => setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
       </nav>
       <main>
         {error && (
@@ -656,12 +755,7 @@ function App() {
         )}
         {library && page === "Practice" && !question && (
           <>
-            <div className="heading">
-              <div>
-                <span className="eyebrow">ONE QUESTION AT A TIME</span>
-                <h1>Make room for understanding.</h1>
-              </div>
-            </div>
+            <h1>Practice</h1>
             <div className="stats">
               {(["unanswered", "correct", "unsure", "wrong"] as const).map(
                 (key) => (
@@ -672,8 +766,39 @@ function App() {
                 ),
               )}
             </div>
-            <section className="panel">
-              <h2>Build a practice set</h2>
+            {deckGroups.map(([deckTopic, sources]) => (
+              <section className="panel deck" key={deckTopic}>
+                <h2>{labelOf(deckTopic) || "Questions"}</h2>
+                {sources.map(([deckSource, rows]) => (
+                  <div className="deck-source" key={deckSource}>
+                    {deckRow(
+                      labelOf(deckSource),
+                      sumRows(rows),
+                      {
+                        topic: deckTopic,
+                        source: deckSource,
+                      },
+                      true,
+                    )}
+                    {rows.map((row) =>
+                      deckRow(chapterLabel(row.chapter) || "No chapter", row, {
+                        topic: deckTopic,
+                        source: deckSource,
+                        chapter: row.chapter,
+                      }),
+                    )}
+                  </div>
+                ))}
+              </section>
+            ))}
+            {!overview.counts.total && (
+              <p className="muted">
+                No questions yet. Set MATERIAL_ROOT to your question-bank
+                folder.
+              </p>
+            )}
+            <details className="panel">
+              <summary>Custom practice set</summary>
               <div className="filters">
                 {(
                   [
@@ -787,34 +912,7 @@ function App() {
               >
                 Start practice · {eligibleCount} questions
               </button>
-              {!overview.counts.total && (
-                <p className="muted">
-                  Import a Markdown question bank in Materials to begin.
-                </p>
-              )}
-            </section>
-            <section>
-              <h2>Saved sets</h2>
-              {!overview.sets?.length ? (
-                <p className="muted">Your next session will be saved here.</p>
-              ) : (
-                overview.sets.map((s: any) => (
-                  <button
-                    className="list-card"
-                    key={s.id}
-                    onClick={() => void run(() => openSet(s.id))}
-                  >
-                    <span>
-                      <strong>{s.title}</strong>
-                      <small>
-                        {s.count} questions · position {s.cursor + 1}
-                      </small>
-                    </span>
-                    <span>Continue →</span>
-                  </button>
-                ))
-              )}
-            </section>
+            </details>
           </>
         )}
         {library && page === "Practice" && question && (
@@ -826,7 +924,7 @@ function App() {
                 setActiveSet(null);
               }}
             >
-              ← All practice sets
+              ← Practice
             </button>
             <div className="row">
               <span className="eyebrow">{activeSet.title}</span>
@@ -851,7 +949,13 @@ function App() {
             <section className="panel question">
               <div className="row">
                 <span className="muted">
-                  {question.topic || question.source || "Practice"}
+                  {[
+                    labelOf(question.topic),
+                    labelOf(question.source),
+                    chapterLabel(question.chapter),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Practice"}
                 </span>
                 <button
                   className="quiet"
@@ -971,330 +1075,150 @@ function App() {
             </section>
           </>
         )}
-        {library && page === "Progress" && (
-          <>
-            <h1>Your progress</h1>
-            <section className="panel">
-              <h2>{overview.counts.total} questions in your library</h2>
-              {Object.entries(overview.counts)
-                .filter(([k]) => k !== "total")
-                .map(([key, value]) => (
-                  <div className="metric" key={key}>
-                    <span>{key}</span>
-                    <progress
-                      value={Number(value)}
-                      max={overview.counts.total || 1}
-                    />
-                    <strong>{String(value)}</strong>
-                  </div>
-                ))}
-            </section>
-            <div className="row">
-              <h2>Focus</h2>
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    setFocus(
-                      (
-                        await api(`${scope}/focus/refresh`, {
-                          operationId: operation(),
-                        })
-                      ).items,
-                    );
-                  })
-                }
-              >
-                Refresh Focus
-              </button>
-              <button
-                className="secondary"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    const response = await api(`${scope}/focus/synthesize`, {
-                      operationId: operation(),
-                      model,
-                    });
-                    setFocus(response.items);
-                    setSaveStatus(
-                      `Focus considered ${response.coverage.considered} of ${response.coverage.eligible} eligible questions.`,
-                    );
-                  })
-                }
-              >
-                Synthesize with AI
-              </button>
-            </div>
-            <p role="status" className="muted">
-              {saveStatus}
-            </p>
-            {!focus.length && (
-              <div className="panel">
-                <p>
-                  No Focus items yet. Focus uses your current answers, flags,
-                  notes, and questions.
-                </p>
-              </div>
-            )}
-            {focus.map((f) => (
-              <article className="panel" key={f.id}>
-                <h3>{f.title}</h3>
-                <Markdown text={f.body} />
-                <span className="badge">{f.stale ? "stale" : f.status}</span>
-                <button
-                  className="quiet"
-                  onClick={() =>
-                    void run(async () => {
-                      await api(
-                        `${scope}/focus/${f.id}`,
-                        {
-                          status: f.status === "resolved" ? "open" : "resolved",
-                          operationId: operation(),
-                          expectedVersion: f.version,
-                        },
-                        "PATCH",
-                      );
-                      await loadFocus();
-                    })
-                  }
-                >
-                  {f.status === "resolved" ? "Reopen" : "Resolve"}
-                </button>
-              </article>
-            ))}
-            <button
-              disabled={busy || !focus.some((f) => f.status === "open")}
-              onClick={() => void run(() => createSet(true))}
-            >
-              Practice these
-            </button>
-          </>
-        )}
         {library && page === "Materials" && (
           <>
             <h1>Materials</h1>
-            {file ? (
-              <section className="panel">
-                <div className="row">
-                  <h2>{file.path}</h2>
-                  <button className="quiet" onClick={() => setFile(null)}>
-                    Close editor
-                  </button>
-                </div>
-                <div className="chips">
+            <section className="panel">
+              <h2>Import Markdown</h2>
+              <label>
+                Choose a file
+                <input
+                  type="file"
+                  accept=".md,.markdown,text/markdown"
+                  onChange={(e) =>
+                    void run(async () => {
+                      const selected = e.target.files?.[0];
+                      if (selected) {
+                        setImportPath(selected.name);
+                        setImportContent(await selected.text());
+                        showImportPreview(null);
+                      }
+                    })
+                  }
+                />
+              </label>
+              <label>
+                File name
+                <input
+                  value={importPath}
+                  onChange={(e) => {
+                    setImportPath(e.target.value);
+                    showImportPreview(null);
+                  }}
+                />
+              </label>
+              <label>
+                Markdown source
+                <textarea
+                  rows={10}
+                  value={importContent}
+                  onChange={(e) => {
+                    setImportContent(e.target.value);
+                    showImportPreview(null);
+                  }}
+                  placeholder="Paste your question-bank Markdown"
+                />
+              </label>
+              <button
+                disabled={busy || !importContent.trim()}
+                onClick={() =>
+                  void run(async () =>
+                    showImportPreview(
+                      await api(`${scope}/imports/preview`, {
+                        files: [
+                          {
+                            path: importPath,
+                            content: importContent,
+                            type: "questions",
+                          },
+                        ],
+                      }),
+                    ),
+                  )
+                }
+              >
+                Preview import
+              </button>
+              {importPreview && (
+                <div className="import-result">
+                  <h3>
+                    {importPreview.counts?.questions || 0} questions found
+                  </h3>
+                  {importPreview.issues?.map((issue: any, index: number) => (
+                    <p
+                      key={index}
+                      className={issue.severity === "error" ? "error" : "muted"}
+                    >
+                      {issue.path}:{issue.line} · {issue.message}
+                    </p>
+                  ))}
+                  {importPreview.identityProposals
+                    ?.filter(
+                      (proposal: any) =>
+                        !proposal.automatic && proposal.candidates.length > 0,
+                    )
+                    .map((proposal: any) => (
+                      <label key={proposal.key}>
+                        {proposal.title}: keep progress from an existing
+                        question?
+                        <select
+                          value={
+                            identityMappings[proposal.key] === null
+                              ? "new"
+                              : identityMappings[proposal.key] || ""
+                          }
+                          onChange={(event) => {
+                            const { [proposal.key]: _previous, ...rest } =
+                              identityMappings;
+                            setIdentityMappings(
+                              event.target.value === ""
+                                ? rest
+                                : {
+                                    ...rest,
+                                    [proposal.key]:
+                                      event.target.value === "new"
+                                        ? null
+                                        : event.target.value,
+                                  },
+                            );
+                          }}
+                        >
+                          <option value="">Automatic: new question</option>
+                          <option value="new">Create a new question</option>
+                          {proposal.candidates.map((candidate: any) => (
+                            <option
+                              key={candidate.id}
+                              value={candidate.id}
+                              disabled={!candidate.choicesCompatible}
+                            >
+                              {candidate.title}
+                              {!candidate.choicesCompatible
+                                ? " · choices changed"
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
                   <button
-                    className={!preview ? "selected" : "secondary"}
-                    onClick={() => setPreview(false)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className={preview ? "selected" : "secondary"}
-                    onClick={() => setPreview(true)}
-                  >
-                    Preview
-                  </button>
-                </div>
-                {preview ? (
-                  <Markdown text={content} />
-                ) : (
-                  <CodeMirror
-                    aria-label="Material source"
-                    height="55vh"
-                    extensions={[markdown()]}
-                    value={content}
-                    onChange={(value) => {
-                      setContent(value);
-                      setSaveStatus("Unsaved changes");
-                    }}
-                  />
-                )}
-                <button
-                  disabled={busy}
-                  onClick={() => void run(() => saveMaterial())}
-                >
-                  Save material
-                </button>
-                <span role="status" className="save-status">
-                  {saveStatus}
-                </span>
-              </section>
-            ) : (
-              <>
-                {files.map((f) => (
-                  <button
-                    className="list-card"
-                    key={f.id}
+                    disabled={busy || !importPreview.canCommit}
                     onClick={() =>
                       void run(async () => {
-                        const selected = await api(`${scope}/files/${f.id}`);
-                        setFile(selected);
-                        setContent(selected.content);
-                        setPreview(false);
-                        setSaveStatus("");
+                        await api(
+                          `${scope}/imports/${importPreview.id}/${importPreview.localRoot ? "root-commit" : "commit"}`,
+                          { acceptWarnings: true, identityMappings },
+                        );
+                        showImportPreview(null);
+                        setImportContent("");
+                        await refresh();
                       })
                     }
                   >
-                    <strong>{f.path}</strong>
-                    <span>Edit →</span>
+                    Confirm import
                   </button>
-                ))}
-                {!materialRoot && (
-                  <section className="panel">
-                    <h2>Import Markdown</h2>
-                    <label>
-                      Choose a file
-                      <input
-                        type="file"
-                        accept=".md,.markdown,text/markdown"
-                        onChange={(e) =>
-                          void run(async () => {
-                            const selected = e.target.files?.[0];
-                            if (selected) {
-                              setImportPath(selected.name);
-                              setImportContent(await selected.text());
-                              showImportPreview(null);
-                            }
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      File name
-                      <input
-                        value={importPath}
-                        onChange={(e) => {
-                          setImportPath(e.target.value);
-                          showImportPreview(null);
-                        }}
-                      />
-                    </label>
-                    <label>
-                      Markdown source
-                      <textarea
-                        rows={10}
-                        value={importContent}
-                        onChange={(e) => {
-                          setImportContent(e.target.value);
-                          showImportPreview(null);
-                        }}
-                        placeholder="Paste your question-bank Markdown"
-                      />
-                    </label>
-                    <button
-                      disabled={busy || !importContent.trim()}
-                      onClick={() =>
-                        void run(async () =>
-                          showImportPreview(
-                            await api(`${scope}/imports/preview`, {
-                              files: [
-                                {
-                                  path: importPath,
-                                  content: importContent,
-                                  type: "questions",
-                                },
-                              ],
-                            }),
-                          ),
-                        )
-                      }
-                    >
-                      Preview import
-                    </button>
-                    {importPreview && (
-                      <div className="import-result">
-                        <h3>
-                          {importPreview.counts?.questions || 0} questions found
-                        </h3>
-                        {importPreview.issues?.map(
-                          (issue: any, index: number) => (
-                            <p
-                              key={index}
-                              className={
-                                issue.severity === "error" ? "error" : "muted"
-                              }
-                            >
-                              {issue.path}:{issue.line} · {issue.message}
-                            </p>
-                          ),
-                        )}
-                        {importPreview.identityProposals
-                          ?.filter(
-                            (proposal: any) =>
-                              !proposal.automatic &&
-                              proposal.candidates.length > 0,
-                          )
-                          .map((proposal: any) => (
-                            <label key={proposal.key}>
-                              {proposal.title}: keep progress from an existing
-                              question?
-                              <select
-                                value={
-                                  identityMappings[proposal.key] === null
-                                    ? "new"
-                                    : identityMappings[proposal.key] || ""
-                                }
-                                onChange={(event) => {
-                                  const { [proposal.key]: _previous, ...rest } =
-                                    identityMappings;
-                                  setIdentityMappings(
-                                    event.target.value === ""
-                                      ? rest
-                                      : {
-                                          ...rest,
-                                          [proposal.key]:
-                                            event.target.value === "new"
-                                              ? null
-                                              : event.target.value,
-                                        },
-                                  );
-                                }}
-                              >
-                                <option value="">
-                                  Automatic: new question
-                                </option>
-                                <option value="new">
-                                  Create a new question
-                                </option>
-                                {proposal.candidates.map((candidate: any) => (
-                                  <option
-                                    key={candidate.id}
-                                    value={candidate.id}
-                                    disabled={!candidate.choicesCompatible}
-                                  >
-                                    {candidate.title}
-                                    {!candidate.choicesCompatible
-                                      ? " · choices changed"
-                                      : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          ))}
-                        <button
-                          disabled={busy || !importPreview.canCommit}
-                          onClick={() =>
-                            void run(async () => {
-                              await api(
-                                `${scope}/imports/${importPreview.id}/${importPreview.localRoot ? "root-commit" : "commit"}`,
-                                { acceptWarnings: true, identityMappings },
-                              );
-                              showImportPreview(null);
-                              setImportContent("");
-                              await loadFiles();
-                              await refresh();
-                            })
-                          }
-                        >
-                          Confirm import
-                        </button>
-                      </div>
-                    )}
-                  </section>
-                )}
-              </>
-            )}
+                </div>
+              )}
+            </section>
           </>
         )}
         {library && page === "Notes" && (

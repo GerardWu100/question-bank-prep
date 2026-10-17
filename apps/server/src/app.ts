@@ -278,9 +278,14 @@ export async function buildApp(
         chapter: q.chapter,
         total: 0,
         done: 0,
+        correct: 0,
+        unsure: 0,
+        wrong: 0,
       };
       row.total++;
       if (q.state.selection) row.done++;
+      const status = questionStatus(q);
+      if (status in row) row[status]++;
       catalog.set(key, row);
     }
     return {
@@ -293,10 +298,11 @@ export async function buildApp(
       ),
       sets: store
         .list(libraryId, "set")
-        .map(({ id, title, cursor, questionIds }) => ({
+        .map(({ id, title, cursor, questionIds, filters }) => ({
           id,
           title,
           cursor,
+          filters,
           count: questionIds.length,
         })),
     };

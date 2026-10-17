@@ -123,7 +123,7 @@ describe("durable practice contract", () => {
     ).toEqual([q.id]);
     expect(store.list(libraryId, "file")[0].path).toBe("renamed.md");
   });
-  it("does not expose prior answer keys to a new blank set and never promotes old set answers", () => {
+  it("carries the latest answer into a new set and keeps each set's own later answers", () => {
     const { store, libraryId, q } = fixture();
     expect(store.question(libraryId, q.id)).not.toHaveProperty("answerKey");
     const first = store.put(libraryId, "set", {
@@ -140,9 +140,10 @@ describe("durable practice contract", () => {
       id: "set2",
       items: [{ questionId: q.id, submitted: false }],
     });
-    expect(store.question(libraryId, q.id, "set2")).not.toHaveProperty(
-      "solution",
-    );
+    expect(store.question(libraryId, q.id, "set2")).toMatchObject({
+      revealed: true,
+      setState: { submitted: true, selection: "B" },
+    });
     store.answer(libraryId, q.id, {
       operationId: "second",
       expectedVersion: 1,
@@ -369,8 +370,8 @@ describe("HTTP boundaries", () => {
     const removed = await app.inject(
       `${prefix}/questions/${q.id}?setId=${set.json().id}`,
     );
-    expect(removed.json()).toMatchObject({ active: false });
-    expect(removed.json()).not.toHaveProperty("answerKey");
+    // Answered earlier in another context, so the new set carries that answer and its key.
+    expect(removed.json()).toMatchObject({ active: false, revealed: true });
     expect(store.select(one.id, {})).toEqual([]);
     await app.close();
   });

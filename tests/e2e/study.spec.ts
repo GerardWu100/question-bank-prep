@@ -24,12 +24,11 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
     .click();
   await expect(page.getByText("1 questions found")).toBeVisible();
   await page.getByRole("button", { name: "Confirm import" }).click();
-  await expect(
-    page.getByRole("button", { name: "questions.md Edit →" }),
-  ).toBeVisible();
   await page.getByRole("button", { name: "Practice", exact: true }).click();
+  // Practice home lists each source and chapter with its own Start button.
   await page
-    .getByRole("button", { name: "Start practice · 1 questions" })
+    .getByRole("button", { name: "Start", exact: true })
+    .first()
     .click();
   await expect(page.getByText("Two pairs make four.")).toHaveCount(0);
   await page.getByRole("button", { name: "A Three", exact: true }).click();
@@ -42,8 +41,11 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "☆ Flag", exact: true }).click();
   await expect(page.getByRole("button", { name: "★ Flagged" })).toBeVisible();
-  await page.getByRole("button", { name: "← All practice sets" }).click();
-  await page.getByRole("button", { name: /Practice set.*Continue/ }).click();
+  await page.getByRole("button", { name: "← Practice" }).click();
+  await page
+    .getByRole("button", { name: "Review", exact: true })
+    .first()
+    .click();
   await expect(
     page.getByRole("button", { name: "B Four", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -51,26 +53,23 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
     path: testInfo.outputPath("question-desktop.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "← All practice sets" }).click();
+  // A new custom set remembers the latest answer from any set.
+  await page.getByRole("button", { name: "← Practice" }).click();
+  await page.getByText("Custom practice set").click();
   await page
     .getByRole("button", { name: "Start practice · 1 questions" })
     .click();
   await expect(
     page.getByRole("button", { name: "B Four", exact: true }),
-  ).toHaveAttribute("aria-pressed", "false");
-  await expect(
-    page.getByRole("button", { name: "Submit answer" }),
-  ).toBeDisabled();
-  await expect(page.getByText("Two pairs make four.")).toHaveCount(0);
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Two pairs make four.")).toBeVisible();
   const state = await request.get(
     `http://127.0.0.1:3000/api/libraries/${library.id}/overview`,
   );
   expect((await state.json()).counts.unsure).toBe(1);
   // Refresh keeps the open set; Back returns to it from another page.
   await page.reload();
-  await expect(
-    page.getByRole("button", { name: "Submit answer" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Question 1" })).toBeVisible();
   await page.getByRole("button", { name: "Notes", exact: true }).click();
   await page.getByRole("button", { name: "New note" }).click();
   await page.getByLabel("Title").fill("Regression checklist");
@@ -78,9 +77,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   await expect(page.getByText("Regression checklist")).toBeVisible();
   await page.goBack();
-  await expect(
-    page.getByRole("button", { name: "Submit answer" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Question 1" })).toBeVisible();
 });
 
 test("small viewport keeps navigation and material rendering within the viewport", async ({

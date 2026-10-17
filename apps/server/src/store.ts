@@ -668,19 +668,19 @@ export class Store {
       }
     })();
   }
-  /** A set plus `itemStatuses`, one grade per question; unsubmitted items are "unanswered". */
+  /**
+   * A set plus `itemStatuses`, one grade per question. A question not yet answered in
+   * this set shows its latest answer from any set, so progress is remembered everywhere.
+   */
   presentSet(libraryId: string, set: any) {
     return {
       ...set,
-      itemStatuses: set.items.map((item: any) =>
-        item.submitted
-          ? grade(
-              item.selection,
-              this.get(libraryId, item.questionId, "question").answerKey,
-              item.confidence,
-            )
-          : "unanswered",
-      ),
+      itemStatuses: set.items.map((item: any) => {
+        const q = this.get(libraryId, item.questionId, "question");
+        return item.submitted
+          ? grade(item.selection, q.answerKey, item.confidence)
+          : questionStatus(q);
+      }),
     };
   }
   question(libraryId: string, questionId: string, setId?: string) {
@@ -691,6 +691,14 @@ export class Store {
       setState = set.items.find((item: any) => item.questionId === questionId);
       if (!setState)
         throw new AppError(404, "NOT_IN_SET", "Question is not in this set.");
+      // Not answered in this set yet: carry the latest answer from any set.
+      if (!setState.submitted && question.state.selection)
+        setState = {
+          ...setState,
+          submitted: true,
+          selection: question.state.selection,
+          confidence: question.state.confidence,
+        };
     }
     return presentQuestion(question, {
       setState,
