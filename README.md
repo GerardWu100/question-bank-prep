@@ -51,6 +51,13 @@ Put `Question` headings one level below a `Case` heading to share its passage. K
 
 The app tracks two distinct answers: the latest overall answer, and the answer within each set. Starting another set leaves that set blank while retaining the overall result. Sure/Unsure applies only to correct answers. A saved response means done, not mastery.
 
+## CFA material prompts
+
+The CFA Level II bank is built in two steps, both run in the private `cfa` repository so no study text lands in this public repository:
+
+1. **PDF → Markdown:** [docs/prompts/pdf-to-markdown.md](docs/prompts/pdf-to-markdown.md) converted `materials/` PDFs into `md_materials/` (finished).
+2. **Markdown → question bank:** the `cfa-question-bank` skill in `cfa/.agents/skills/cfa-question-bank/` (`SKILL.md`, `template.md`, `sources.md`) extracts questions into `cfa/question_bank/<NN-topic>/<source>.md`.
+
 ## AI and calculator
 
 AI uses the existing Codex ChatGPT subscription login read-only through the pinned pi-ai adapter. It does not refresh or copy credentials and has no API-key billing fallback. Codex remains the credential refresh owner. The app checks the local account model catalog and disables unavailable models; reopen Codex if its catalog or login has expired. Only explicitly sent context and retrieved excerpts go to the provider.
