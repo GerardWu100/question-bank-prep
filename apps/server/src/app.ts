@@ -230,9 +230,13 @@ export async function buildApp(
           labels === undefined ? null : validateChoiceLabels(labels);
         if (invalidLabels)
           throw new AppError(400, "INVALID_LABELS", invalidLabels);
+        const model = request.body.settings?.model;
+        if (model !== undefined && (typeof model !== "string" || !model))
+          throw new AppError(400, "INVALID_MODEL", "Choose a model by its ID.");
         const settings = {
           ...library.settings,
           ...(labels ? { choiceLabels: labels } : {}),
+          ...(model ? { model } : {}),
         };
         const name =
           request.body.name === undefined

@@ -1,6 +1,6 @@
 # Subscription adapter
 
-The server uses pinned `@earendil-works/pi-ai` 1.2.0 through its legacy `openai-codex-responses` transport. It reads the existing Codex ChatGPT access token and recent Codex account model cache on each request. It neither copies credentials nor refreshes them; Codex remains the only refresh owner. Missing, expired, unsupported or API-key credentials disable generation. Only the requested GPT-6.1 Sol and GPT-6 Luna models are offered, where both catalogs contain them. No environment API key is read and no model fallback is performed.
+The server uses pinned `@earendil-works/pi-ai` 1.2.0 through its legacy `openai-codex-responses` transport. It reads the existing Codex ChatGPT access token and recent Codex account model cache on each request. It neither copies credentials nor refreshes them; Codex remains the only refresh owner. Missing, expired, unsupported or API-key credentials disable generation. Every model in the Codex account catalog that is not marked hidden is offered; a model is usable only when the pinned adapter also supports it. No environment API key is read and no model fallback is performed.
 
 The model catalog is Codex's account cache, with a 24-hour freshness bound, rather than a fresh entitlement guarantee. A provider rejection still fails the run. Open Codex to refresh an expired session or stale catalog. Operating-system-only credential storage is not supported by this adapter. Tokens are never returned to the browser, saved to the database or included in error messages.
 

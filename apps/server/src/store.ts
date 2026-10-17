@@ -796,6 +796,11 @@ export class Store {
     if (
       typeof filters !== "object" ||
       Array.isArray(filters) ||
+      (filters.sources !== undefined &&
+        (!Array.isArray(filters.sources) ||
+          !filters.sources.every(
+            (name: unknown) => typeof name === "string",
+          ))) ||
       (filters.statuses !== undefined &&
         (!Array.isArray(filters.statuses) ||
           !filters.statuses.every((status: unknown) =>
@@ -825,6 +830,7 @@ export class Store {
         (!filters.topic || q.topic === filters.topic) &&
         (!filters.chapter || q.chapter === filters.chapter) &&
         (!filters.source || q.source === filters.source) &&
+        (!filters.sources?.length || filters.sources.includes(q.source)) &&
         (!query ||
           `${q.title} ${q.topic} ${q.source} ${q.chapter} ${q.stem}`
             .toLowerCase()

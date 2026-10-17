@@ -5,13 +5,12 @@ import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-code
 import { stream as codexStream } from '@earendil-works/pi-ai/api/openai-codex-responses';
 import { normalizeContext, type Context, type Tool, type Message } from '@earendil-works/pi-ai';
 
-const REQUESTED_MODELS = ['gpt-6.1-sol', 'gpt-6-luna'] as const;
 const MAX_PROMPT_LENGTH = 80_000;
 const MAX_REPLY_LENGTH = 100_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export type AIEvent = { type: 'text'; text: string } | { type: 'done'; model: string; provider: string } | { type: 'error'; code: string; message: string };
-export interface ModelStatus { id: string; enabled: boolean; reason?: string }
+export interface ModelStatus { id: string; name: string; enabled: boolean; reason?: string }
 export interface AccountStatus { available: boolean; provider: string; route: string; reason?: string; models: ModelStatus[] }
 export interface AIRequest { model: string; prompt: string; systemPrompt?: string; signal?: AbortSignal; history?: { role: 'user' | 'assistant'; content: string }[]; tools?: Tool[]; executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown> }
 export interface StudyProvider { status(): Promise<AccountStatus>; models(): Promise<ModelStatus[]>; stream(request: AIRequest): AsyncGenerator<AIEvent> }
@@ -21,7 +20,7 @@ export class SubscriptionProvider implements StudyProvider {
   private readonly codexDirectory: string;
   constructor(codexDirectory = process.env.CODEX_HOME || join(homedir(), '.codex')) { this.codexDirectory = codexDirectory; }
 
-  private async credentials(): Promise<{ access: string; modelIds: Set<string> }> {
+  private async credentials(): Promise<{ access: string; catalog: { slug: string; display_name?: string; visibility?: string }[] }> {
     let auth;
     let catalog;
     try {
@@ -34,15 +33,19 @@ export class SubscriptionProvider implements StudyProvider {
     catch { throw new Error('Codex subscription token format is unsupported.'); }
     if (typeof claims.exp !== 'number' || claims.exp * 1000 < Date.now() + 60_000) throw new Error('Codex subscription token expired. Refresh your sign-in in Codex; this app does not rotate its credentials.');
     if (!Array.isArray(catalog.models) || !Number.isFinite(Date.parse(catalog.fetched_at)) || Date.now() - Date.parse(catalog.fetched_at) > CATALOG_MAX_AGE_MS) throw new Error('Codex account model catalog is missing or stale. Open Codex to refresh it.');
-    return { access: auth.tokens.access_token, modelIds: new Set(catalog.models.map((model: { slug: string }) => model.slug)) };
+    return { access: auth.tokens.access_token, catalog: catalog.models };
   }
 
   async status(): Promise<AccountStatus> {
     let reason: string | undefined;
-    let modelIds = new Set<string>();
-    try { modelIds = (await this.credentials()).modelIds; } catch (error) { reason = (error as Error).message; }
+    let catalog: { slug: string; display_name?: string; visibility?: string }[] = [];
+    try { catalog = (await this.credentials()).catalog; } catch (error) { reason = (error as Error).message; }
+    // Every model Codex lists for this account (hidden internal ones skipped), in Codex's
+    // order; usable only when the pinned adapter can call it.
     const supported = new Set(openaiCodexProvider().getModels().map(model => model.id));
-    const models = REQUESTED_MODELS.map(id => ({ id, enabled: !reason && modelIds.has(id) && supported.has(id), reason: reason ?? (!modelIds.has(id) || !supported.has(id) ? 'Model is unavailable in the account catalog or pinned adapter.' : undefined) }));
+    const models = catalog
+      .filter(entry => entry.visibility !== 'hide')
+      .map(entry => ({ id: entry.slug, name: entry.display_name || entry.slug, enabled: !reason && supported.has(entry.slug), reason: supported.has(entry.slug) ? undefined : 'Not supported by the pinned subscription adapter.' }));
     return { available: models.some(model => model.enabled), provider: 'openai-codex', route: 'ChatGPT subscription · read-only Codex login', reason, models };
   }
 

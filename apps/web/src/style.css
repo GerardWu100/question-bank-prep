@@ -584,28 +584,47 @@ pre {
   margin-left: 0;
   color: var(--c-607169);
 }
+/* Chat: your messages sit right in a tinted bubble; tutor replies read like the page. */
 .message {
-  padding: 1.2rem 1.5rem;
-  margin-bottom: 1rem;
-  border-radius: 10px;
-  background: var(--c-fffdf8);
-  border: 1px solid var(--c-dddddd);
+  margin: 0 0 1rem;
+}
+.message.assistant {
+  padding: 0.2rem 0;
 }
 .message.user {
+  margin-left: auto;
+  max-width: min(80%, 46rem);
+  padding: 0.55rem 1rem;
+  border-radius: 14px 14px 4px 14px;
   background: var(--c-e9eee3);
+}
+.message.user .markdown > :first-child {
+  margin-top: 0;
+}
+.message.user .markdown > :last-child {
+  margin-bottom: 0;
 }
 .composer {
   background: var(--c-fffdf8);
   border: 1px solid var(--c-d4dcd0);
-  padding: 1rem 1.4rem;
+  padding: 0.6rem 0.8rem;
   border-radius: 12px;
-  margin-top: 2rem;
-}
-.composer label {
-  margin: 0;
+  margin-top: 1rem;
 }
 .composer textarea {
-  margin-bottom: 0.8rem;
+  border: 0;
+  resize: vertical;
+  margin: 0;
+  background: transparent;
+}
+.composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+.composer-actions [role="status"] {
+  margin-right: auto;
 }
 footer {
   padding: 1.3rem clamp(1rem, 5vw, 5rem);
@@ -693,7 +712,7 @@ footer {
 }
 .deck-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(4rem, 12rem) 6.5rem auto;
+  grid-template-columns: minmax(0, 1fr) minmax(4rem, 12rem) 6.5rem 15rem;
   align-items: center;
   gap: 0.4rem 1rem;
   padding: 0.35rem 0 0.35rem 1.2rem;
@@ -730,18 +749,19 @@ footer {
 .deck-actions {
   display: flex;
   gap: 0.5rem;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 .deck-actions button {
   white-space: nowrap;
   margin: 0;
   padding: 0.35rem 0.9rem;
 }
-@media (max-width: 760px) {
+/* Narrow windows: the name takes its own line, then bar, count and buttons. */
+@media (max-width: 1000px) {
   .deck-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(4rem, 1fr) auto auto;
   }
-  .deck-bar {
+  .deck-label {
     grid-column: 1 / -1;
   }
 }
@@ -813,4 +833,18 @@ footer {
 button.small {
   padding: 0.3rem 0.7rem;
   font-size: 0.85rem;
+}
+details.deck > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: revert;
+}
+details.deck > summary h2 {
+  display: inline;
+  margin: 0;
+}
+details.deck[open] > summary {
+  margin-bottom: 0.8rem;
 }

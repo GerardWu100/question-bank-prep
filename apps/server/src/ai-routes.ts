@@ -4,6 +4,8 @@ import { AppError, id, presentQuestion, questionContent, Store } from './store.j
 import type { StudyProvider } from '../../ai-runtime/index.js';
 
 const MAX_TURN_LENGTH = 20_000;
+/** Model used when neither the request nor the library settings name one. */
+const DEFAULT_MODEL = 'gpt-6.1-sol';
 /** Characters of the open material section sent to the tutor as context. */
 const MAX_MATERIAL_CONTEXT = 40_000;
 const MAX_HISTORY_MESSAGES = 12;
@@ -84,7 +86,7 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
       const runId = id();
       chat.messages.push({ id: id(), role: 'user', content: text, markdown: text, status: 'completed', mode, setId: body.setId }, { id: runId, role: 'assistant', content: '', markdown: '', status: 'running', mode, setId: body.setId });
       store.put(libraryId, 'chat', chat);
-      return store.put(libraryId, 'run', { id: runId, chatId: chat.id, status: 'running', model: body.model ?? 'gpt-6.1-sol', mode, createdAt: new Date().toISOString(), sources: [], tools: [] });
+      return store.put(libraryId, 'run', { id: runId, chatId: chat.id, status: 'running', model: body.model ?? store.library(libraryId).settings.model ?? DEFAULT_MODEL, mode, createdAt: new Date().toISOString(), sources: [], tools: [] });
     });
     const existing = store.get(libraryId, run.id, 'run');
     if (existing.started || existing.status !== 'running') return { run: existing, chat: visibleChat(libraryId, store.get(libraryId, chat.id, 'chat'), body.setId) };

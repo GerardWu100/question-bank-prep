@@ -153,7 +153,6 @@ function App() {
     [settings, setSettings] = useState<any>(null),
     [citation, setCitation] = useState<any>(null),
     [librarySettings, setLibrarySettings] = useState<any>(null),
-    [model, setModel] = useState(DEFAULT_MODEL),
     [activeRun, setActiveRun] = useState<string | null>(null),
     [needsLogin, setNeedsLogin] = useState(false),
     [password, setPassword] = useState(""),
@@ -168,6 +167,13 @@ function App() {
     [readingSection, setReadingSection] = useState(0),
     [fontSize, setFontSize] = useState(() =>
       loadPreference("fontSize", DEFAULT_FONT_SIZE),
+    ),
+    [practiceSources, setPracticeSources] = useState<string[]>(() =>
+      loadPreference("practiceSources", []),
+    ),
+    // null until the user folds a topic: every topic starts open.
+    [openTopics, setOpenTopics] = useState<string[] | null>(() =>
+      loadPreference<string[] | null>("openTopics", null),
     ),
     [theme, setTheme] = useState<(typeof THEMES)[number]>(() =>
       loadPreference("theme", "system"),
@@ -213,6 +219,8 @@ function App() {
     savePreference("reading", { path: readingPath, section });
     window.scrollTo({ top: 0 });
   };
+  // The tutor model is a library setting chosen on the Settings page.
+  const model = librarySettings?.settings?.model || DEFAULT_MODEL;
   const latestQuestion = useRef<any>(null),
     queue = useRef(Promise.resolve()),
     routeReady = useRef(false),
@@ -275,6 +283,7 @@ function App() {
       const { configured } = await api("/material-root");
       setMaterialRoot(configured);
       if (configured) await syncMaterialRoot();
+      setLibrarySettings(await api(`${scope}/settings`));
       await refresh();
       await showHash();
       routeReady.current = true;
@@ -489,6 +498,7 @@ function App() {
       chapter: deck.chapter ?? "",
       statuses: review === "wrong" || review === "unsure" ? [review] : [],
       flagged: review === "flagged",
+      sources: activeSources,
     };
     const existing =
       !review &&
@@ -498,6 +508,8 @@ function App() {
           s.filters?.topic === filters.topic &&
           (s.filters?.source ?? "") === filters.source &&
           (s.filters?.chapter ?? "") === filters.chapter &&
+          JSON.stringify(s.filters?.sources ?? []) ===
+            JSON.stringify(filters.sources) &&
           !s.filters?.statuses?.length &&
           !s.filters?.query &&
           !s.filters?.flagged,
@@ -575,7 +587,28 @@ function App() {
   // Practice is by topic and chapter; sources are merged and only listed.
   // catalog rows (one per topic/source/chapter) -> [topic, [chapter, rows of each source][]][]
   const deckGroups: [string, [string, any[]][]][] = [];
-  for (const row of overview.catalog ?? []) {
+  // Sources the user switched off on the Practice page are left out everywhere below.
+  // practiceSources: [] means every source.
+  const allSources: string[] = [
+    ...new Set<string>((overview.catalog ?? []).map((row: any) => row.source)),
+  ].sort();
+  const activeSources = practiceSources.filter((name) =>
+    allSources.includes(name),
+  );
+  const toggleSource = (name: string) => {
+    const current = activeSources.length ? activeSources : allSources;
+    const next = current.includes(name)
+      ? current.filter((s) => s !== name)
+      : [...current, name].sort();
+    // At least one source stays on; all on is stored as "every source".
+    if (!next.length) return;
+    const stored = next.length === allSources.length ? [] : next;
+    setPracticeSources(stored);
+    savePreference("practiceSources", stored);
+  };
+  for (const row of (overview.catalog ?? []).filter(
+    (row: any) => !activeSources.length || activeSources.includes(row.source),
+  )) {
     let topicEntry = deckGroups.find(([t]) => t === row.topic);
     if (!topicEntry) deckGroups.push((topicEntry = [row.topic, []]));
     let chapterEntry = topicEntry[1].find(([c]) => c === row.chapter);
@@ -651,14 +684,7 @@ function App() {
     <>
       {chat?.messages?.map((m: any) => (
         <article key={m.id} className={`message ${m.role}`}>
-          <span className="eyebrow">
-            {m.role === "assistant"
-              ? "TUTOR"
-              : m.role === "user"
-                ? "YOU"
-                : m.role}
-          </span>
-          <Markdown text={m.content || ""} />
+          <Markdown text={m.content || (m.status === "running" ? "…" : "")} />
           {m.sources?.length > 0 && (
             <div className="chips">
               {m.sources.map((source: any) => (
@@ -680,9 +706,9 @@ function App() {
               ))}
             </div>
           )}
-          {m.role === "assistant" && (
+          {m.role === "assistant" && m.status === "completed" && (
             <button
-              className="quiet"
+              className="quiet small"
               onClick={() =>
                 void run(async () => {
                   await api(
@@ -768,35 +794,33 @@ function App() {
           });
         }}
       >
-        <label htmlFor="tutor-prompt">Your question</label>
-        <label>
-          Model
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            {(settings?.models || [{ id: DEFAULT_MODEL, enabled: true }]).map(
-              (entry: any) => (
-                <option
-                  key={entry.id}
-                  disabled={!entry.enabled}
-                  value={entry.id}
-                >
-                  {entry.id}
-                  {!entry.enabled ? " · unavailable" : ""}
-                </option>
-              ),
-            )}
-          </select>
-        </label>
         <textarea
-          id="tutor-prompt"
+          aria-label="Message to the tutor"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          rows={3}
-          placeholder="What would you like to understand?"
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              e.currentTarget.form?.requestSubmit();
+            }
+          }}
+          rows={2}
+          placeholder={
+            page === "Practice"
+              ? "Ask about this question"
+              : page === "Materials"
+                ? "Ask about this section"
+                : "Ask anything"
+          }
         />
-        <div className="row">
+        <div className="composer-actions">
           {/* The practice page already shows the save status above; avoid a second copy. */}
           <span role="status" className="muted">
-            {busy ? "Working…" : page === "Practice" ? "" : saveStatus}
+            {activeRun ? "Thinking…" : page === "Practice" ? "" : saveStatus}
           </span>
           <button disabled={busy || !prompt.trim()}>Send</button>
           {activeRun && (
@@ -979,6 +1003,69 @@ function App() {
                 </button>
               )}
             </div>
+            {allSources.length > 1 && (
+              <div className="chips source-chips" aria-label="Sources">
+                {allSources.map((name) => {
+                  const on =
+                    !activeSources.length || activeSources.includes(name);
+                  return (
+                    <button
+                      key={name}
+                      aria-pressed={on}
+                      className={on ? "selected" : "secondary"}
+                      onClick={() => toggleSource(name)}
+                    >
+                      {labelOf(name)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {deckGroups.map(([deckTopic, chapters]) => {
+              const topicSummary = sumRows(
+                chapters.flatMap(([, rows]) => rows),
+              );
+              return (
+                // Topics fold away; which ones are open is remembered in this browser.
+                <details
+                  className="panel deck"
+                  key={deckTopic}
+                  open={openTopics === null || openTopics.includes(deckTopic)}
+                  onToggle={(e) => {
+                    const isOpen = (e.currentTarget as HTMLDetailsElement).open;
+                    const current = openTopics ?? deckGroups.map(([t]) => t);
+                    if (isOpen === current.includes(deckTopic)) return;
+                    const next = isOpen
+                      ? [...current, deckTopic]
+                      : current.filter((t) => t !== deckTopic);
+                    setOpenTopics(next);
+                    savePreference("openTopics", next);
+                  }}
+                >
+                  <summary>
+                    <h2>{labelOf(deckTopic) || "Questions"}</h2>
+                    <span className="muted">
+                      {topicSummary.done}/{topicSummary.total} answered
+                    </span>
+                  </summary>
+                  {deckRow(
+                    "All chapters",
+                    sumRows(chapters.flatMap(([, rows]) => rows)),
+                    { topic: deckTopic },
+                    true,
+                  )}
+                  {chapters.map(([deckChapter, rows]) =>
+                    deckRow(
+                      chapterLabel(deckChapter) || "No chapter",
+                      sumRows(rows),
+                      { topic: deckTopic, chapter: deckChapter },
+                      false,
+                      rows.map((row: any) => labelOf(row.source)).join(" · "),
+                    ),
+                  )}
+                </details>
+              );
+            })}
             <div className="stats">
               {(["unanswered", "correct", "unsure", "wrong"] as const).map(
                 (key) => (
@@ -989,27 +1076,7 @@ function App() {
                 ),
               )}
             </div>
-            {deckGroups.map(([deckTopic, chapters]) => (
-              <section className="panel deck" key={deckTopic}>
-                <h2>{labelOf(deckTopic) || "Questions"}</h2>
-                {deckRow(
-                  "All chapters",
-                  sumRows(chapters.flatMap(([, rows]) => rows)),
-                  { topic: deckTopic },
-                  true,
-                )}
-                {chapters.map(([deckChapter, rows]) =>
-                  deckRow(
-                    chapterLabel(deckChapter) || "No chapter",
-                    sumRows(rows),
-                    { topic: deckTopic, chapter: deckChapter },
-                    false,
-                    rows.map((row: any) => labelOf(row.source)).join(" · "),
-                  ),
-                )}
-              </section>
-            ))}
-            {!overview.counts.total && (
+            {overview.catalog && !overview.counts.total && (
               <p className="muted">
                 No questions yet. Set MATERIAL_ROOT to your question-bank
                 folder.
@@ -1765,20 +1832,42 @@ function App() {
               </section>
             )}
             <section className="panel">
-              <h2>AI provider</h2>
-              <p>
-                {settings?.reason ||
-                  "Provider availability is checked by the server. Study and editing work without AI."}
-              </p>
-              {(settings?.models || []).map((entry: any) => (
-                <div className="model-status" key={entry.id}>
-                  <strong>{entry.id}</strong>
-                  <span className="badge">
-                    {entry.enabled ? "Available" : "Unavailable"}
-                  </span>
-                  {entry.reason && <p className="muted">{entry.reason}</p>}
-                </div>
-              ))}
+              <h2>AI model</h2>
+              {settings?.reason && <p className="muted">{settings.reason}</p>}
+              <select
+                aria-label="AI model"
+                value={model}
+                disabled={busy || !librarySettings}
+                onChange={(e) =>
+                  void run(async () => {
+                    setLibrarySettings(
+                      await api(
+                        `${scope}/settings`,
+                        {
+                          operationId: operation(),
+                          expectedVersion: librarySettings.version,
+                          settings: { model: e.target.value },
+                        },
+                        "PATCH",
+                      ),
+                    );
+                  })
+                }
+              >
+                {(settings?.models?.length
+                  ? settings.models
+                  : [{ id: model, name: model, enabled: true }]
+                ).map((entry: any) => (
+                  <option
+                    key={entry.id}
+                    value={entry.id}
+                    disabled={!entry.enabled}
+                  >
+                    {entry.name}
+                    {entry.enabled ? "" : " · not supported"}
+                  </option>
+                ))}
+              </select>
             </section>
             <section className="panel">
               <h2>Configured material folder</h2>
