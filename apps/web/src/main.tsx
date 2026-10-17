@@ -31,6 +31,8 @@ const HINT_REQUEST =
   "Give me one hint for this question. Do not reveal the answer.";
 const EXPLAIN_ANSWER_REQUEST =
   "Explain this question: the concept and LOS it tests, why the correct answer is right, and why each other choice is wrong, starting with the one I chose if it was wrong. Show any calculation.";
+const STUDY_REVIEW_REQUEST =
+  "Review my study. Use get_my_mistakes, get_my_questions and get_my_notes. Group my mistakes by chapter and the concept behind them, point out patterns (including what I keep asking about), and flag gaps or errors in my notes. Finish with a short plan: the 3 chapters to practise next, each with one concrete tip.";
 const EXPLAIN_SECTION_REQUEST =
   "Explain this section in plain language: the key ideas, each formula with every symbol defined, and one short worked example with numbers.";
 /** A bank solution's last line naming its source, e.g. "*Source: Qbank 2025, …*". */
@@ -719,9 +721,10 @@ function App() {
     );
   };
   /** Send one message to the tutor in the current place (question, section, or Ask AI). */
-  const sendToTutor = (text: string) =>
+  const sendToTutor = (text: string, fresh = false) =>
     run(async () => {
-      let current = chat;
+      // fresh: start a new conversation instead of continuing the open one.
+      let current = fresh ? null : chat;
       // Under a practice question or a material section, the conversation belongs there.
       if (!current)
         current = await api(
@@ -739,7 +742,13 @@ function App() {
                   readingPath,
                   readingTitle: sectionKey,
                 }
-              : { title: prompt.slice(0, 60), kind: "ask" },
+              : {
+                  title:
+                    text === STUDY_REVIEW_REQUEST
+                      ? "Study review"
+                      : text.slice(0, 60),
+                  kind: "ask",
+                },
         );
       setChat(current);
       setPrompt("");
@@ -1789,9 +1798,17 @@ function App() {
           <>
             <div className="row">
               <h1>Ask AI</h1>
-              <button className="secondary" onClick={() => setChat(null)}>
-                New conversation
-              </button>
+              <span className="deck-actions">
+                <button
+                  disabled={busy}
+                  onClick={() => void sendToTutor(STUDY_REVIEW_REQUEST, true)}
+                >
+                  Review my study
+                </button>
+                <button className="secondary" onClick={() => setChat(null)}>
+                  New conversation
+                </button>
+              </span>
             </div>
             {tutorConversation}
           </>

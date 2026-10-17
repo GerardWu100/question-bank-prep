@@ -108,6 +108,33 @@ describe('durable tutor runs', () => {
       expect(prompts[1]).toContain('"yourResult":"wrong"');
     } finally { await app.close(); }
   });
+  it('gives the study review your mistakes, your tutor questions and your notes, with one notes-search tool', async () => {
+    const seen: Record<string, any> = {};
+    let toolNames: string[] = [];
+    const provider = { status: async () => ({ available: true, models: [] }), async *stream(request: any) {
+      toolNames = request.tools.map((tool: any) => tool.name);
+      for (const name of ['get_my_mistakes', 'get_my_questions', 'get_my_notes']) seen[name] = await request.executeTool(name, {});
+      yield { type: 'text', text: 'plan' };
+      yield { type: 'done', model: 'gpt-6.1-sol', provider: 'openai-codex' };
+    } };
+    const { app, store } = await buildApp({ provider, readingRoot: tmpdir() });
+    try {
+      const library = store.createLibrary('Review test');
+      const preview = store.preview(library.id, [{ path: '01-quantitative-methods/bank.md', content: '# Chapter LM01 Basics\n## Question 1\nTwo plus two?\n### Choices\nA. 3\nB. 4\nC. 5\n### Answer\nB\n' }]);
+      store.commit(library.id, preview.id, true);
+      const question = store.list(library.id, 'question')[0];
+      store.answer(library.id, question.id, { operationId: 'wrong', expectedVersion: 0, selection: 'A' });
+      store.saveNote(library.id, { id: 'n1', title: 'Regression', content: 'Check the t-stat.', provenance: 'human-saved', version: 1 });
+      const base = `/api/libraries/${library.id}`;
+      const chat = (await app.inject({ method: 'POST', url: `${base}/chats`, payload: {} })).json();
+      await app.inject({ method: 'POST', url: `${base}/chats/${chat.id}/messages`, payload: { text: 'Why is homoskedasticity needed?', operationId: 'review-turn', stream: true } });
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(seen.get_my_mistakes).toMatchObject({ byChapter: [{ chapter: 'Chapter LM01 Basics', answered: 1, wrong: 1, unsure: 0 }], mistakes: [{ result: 'wrong', yourAnswer: 'A', answerKey: 'B' }] });
+      expect(seen.get_my_questions).toEqual([{ chat: 'Ask AI', text: 'Why is homoskedasticity needed?' }]);
+      expect(seen.get_my_notes).toEqual([{ title: 'Regression', origin: 'your note', text: 'Check the t-stat.' }]);
+      expect(toolNames.filter(name => name === 'rg' || name === 'search_study_notes')).toHaveLength(1);
+    } finally { await app.close(); }
+  });
   it('retains partial text as interrupted and never invents terminal success', async () => {
     const provider = { status: async () => ({ available: true, models: [] }), async *stream() { yield { type: 'text', text: 'Partial' }; } };
     const { app } = await buildApp({ provider });

@@ -67,7 +67,7 @@ export class SubscriptionProvider implements StudyProvider {
     if (!account.models.some(model => model.id === request.model && model.enabled)) { yield { type: 'error', code: 'setup_required', message: account.reason ?? 'Selected model is unavailable. No model was substituted.' }; return; }
     const model = openaiCodexProvider().getModels().find(model => model.id === request.model)!;
     // Always send a level so the library's choice applies: the requested level when the
-    // model supports it, else the model's catalog default. Detailed summaries are requested
+    // model supports it, else the model's catalog default. A summary is requested ('auto')
     // so the UI can show the reasoning; short reasoning may return none.
     const status = account.models.find(entry => entry.id === request.model)!;
     const effort = status.efforts.find(level => level === request.effort) ?? status.defaultEffort;
@@ -85,7 +85,7 @@ export class SubscriptionProvider implements StudyProvider {
       let terminal = false;
       let continueTools = false;
       // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
-      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'detailed' as const } : {}) })) {
+      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) })) {
         if (event.type === 'text_delta') {
           length += event.delta.length;
           if (length > MAX_REPLY_LENGTH) { controller.abort(); yield { type: 'error', code: 'output_limit', message: 'Reply exceeded the output limit.' }; return; }
