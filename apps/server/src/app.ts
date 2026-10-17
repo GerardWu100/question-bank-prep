@@ -46,17 +46,15 @@ export async function buildApp(
     store.db.close();
   });
   app.setErrorHandler((error: any, _request, reply) =>
-    reply
-      .code(error.statusCode ?? 500)
-      .send({
-        error: {
-          code: error.code ?? "INTERNAL_ERROR",
-          message: error.statusCode
-            ? error.message
-            : "The operation failed. Check the server log.",
-          ...(error.current ? { current: error.current } : {}),
-        },
-      }),
+    reply.code(error.statusCode ?? 500).send({
+      error: {
+        code: error.code ?? "INTERNAL_ERROR",
+        message: error.statusCode
+          ? error.message
+          : "The operation failed. Check the server log.",
+        ...(error.current ? { current: error.current } : {}),
+      },
+    }),
   );
   // Route config flags: public (no sign-in) and allowWhenArchived (writes allowed on archived libraries).
   app.addHook("onRequest", async (request) => {
@@ -183,11 +181,15 @@ export async function buildApp(
       return { authenticated: true };
     },
   );
-  app.delete("/api/session", { config: { public: true } }, async (request, reply) => {
-    sessions.delete(request.cookies.study_session ?? "");
-    reply.clearCookie("study_session");
-    return { authenticated: false };
-  });
+  app.delete(
+    "/api/session",
+    { config: { public: true } },
+    async (request, reply) => {
+      sessions.delete(request.cookies.study_session ?? "");
+      reply.clearCookie("study_session");
+      return { authenticated: false };
+    },
+  );
   app.get("/api/libraries", async () => ({
     libraries: store.libraryIds().map((libraryId) => store.library(libraryId)),
   }));
@@ -210,7 +212,7 @@ export async function buildApp(
     base + "/settings",
     { config: { allowWhenArchived: true } },
     async (request: any) =>
-    store.idempotent(request, () => {
+      store.idempotent(request, () => {
         const library = store.library(lib(request));
         if (request.body.expectedVersion !== library.version)
           throw new AppError(
@@ -256,9 +258,7 @@ export async function buildApp(
   );
   app.get(base + "/overview", async (request: any) => {
     const libraryId = lib(request);
-    const questions = store
-      .list(libraryId, "question")
-      .filter((q) => q.active);
+    const questions = store.list(libraryId, "question").filter((q) => q.active);
     const counts: Record<string, number> = {
       unanswered: 0,
       wrong: 0,
@@ -268,8 +268,29 @@ export async function buildApp(
       total: questions.length,
     };
     for (const q of questions) counts[questionStatus(q)]++;
+    // One row per topic / source / chapter, so practice can be split instead of one big list.
+    const catalog = new Map<string, any>();
+    for (const q of questions) {
+      const key = `${q.topic}\u0000${q.source}\u0000${q.chapter}`;
+      const row = catalog.get(key) ?? {
+        topic: q.topic,
+        source: q.source,
+        chapter: q.chapter,
+        total: 0,
+        done: 0,
+      };
+      row.total++;
+      if (q.state.selection) row.done++;
+      catalog.set(key, row);
+    }
     return {
       counts,
+      catalog: [...catalog.values()].sort(
+        (a, b) =>
+          a.topic.localeCompare(b.topic) ||
+          a.source.localeCompare(b.source) ||
+          a.chapter.localeCompare(b.chapter),
+      ),
       sets: store
         .list(libraryId, "set")
         .map(({ id, title, cursor, questionIds }) => ({
@@ -288,28 +309,28 @@ export async function buildApp(
   );
   app.patch(base + "/questions/:id/annotation", async (request: any) =>
     store.idempotent(request, () => {
-        const q = store.get(lib(request), request.params.id, "question");
-        if (q.annotation.version !== request.body.expectedVersion)
-          throw new AppError(
-            409,
-            "VERSION_CONFLICT",
-            "The annotation changed.",
-            q.annotation,
-          );
-        const annotation = {
-          flagged:
-            request.body.flagged === undefined
-              ? q.annotation.flagged
-              : Boolean(request.body.flagged),
-          note:
-            request.body.note === undefined
-              ? q.annotation.note
-              : String(request.body.note).slice(0, 100000),
-          version: q.annotation.version + 1,
-        };
-        store.put(lib(request), "question", { ...q, annotation });
-        return annotation;
-      }),
+      const q = store.get(lib(request), request.params.id, "question");
+      if (q.annotation.version !== request.body.expectedVersion)
+        throw new AppError(
+          409,
+          "VERSION_CONFLICT",
+          "The annotation changed.",
+          q.annotation,
+        );
+      const annotation = {
+        flagged:
+          request.body.flagged === undefined
+            ? q.annotation.flagged
+            : Boolean(request.body.flagged),
+        note:
+          request.body.note === undefined
+            ? q.annotation.note
+            : String(request.body.note).slice(0, 100000),
+        version: q.annotation.version + 1,
+      };
+      store.put(lib(request), "question", { ...q, annotation });
+      return annotation;
+    }),
   );
   app.post(base + "/sets/preview", async (request: any) => {
     const questionIds = store.select(lib(request), request.body);
@@ -347,26 +368,41 @@ export async function buildApp(
     sets: store.list(lib(request), "set"),
   }));
   app.get(base + "/sets/:id", async (request: any) =>
-    store.get(lib(request), request.params.id, "set"),
+    store.presentSet(
+      lib(request),
+      store.get(lib(request), request.params.id, "set"),
+    ),
   );
   app.patch(base + "/sets/:id", async (request: any) =>
-    store.mutation(request, () => {
-      const set = store.get(lib(request), request.params.id, "set");
-      if (set.version !== request.body.expectedVersion)
-        throw new AppError(409, "VERSION_CONFLICT", "Set cursor changed.", set);
-      const cursor = Number(request.body.cursor);
-      if (!Number.isInteger(cursor) || cursor < 0 || cursor >= set.items.length)
-        throw new AppError(
-          400,
-          "INVALID_CURSOR",
-          "Cursor is outside this set.",
-        );
-      return store.put(lib(request), "set", {
-        ...set,
-        cursor,
-        version: set.version + 1,
-      });
-    }),
+    store.presentSet(
+      lib(request),
+      store.mutation(request, () => {
+        const set = store.get(lib(request), request.params.id, "set");
+        if (set.version !== request.body.expectedVersion)
+          throw new AppError(
+            409,
+            "VERSION_CONFLICT",
+            "Set cursor changed.",
+            set,
+          );
+        const cursor = Number(request.body.cursor);
+        if (
+          !Number.isInteger(cursor) ||
+          cursor < 0 ||
+          cursor >= set.items.length
+        )
+          throw new AppError(
+            400,
+            "INVALID_CURSOR",
+            "Cursor is outside this set.",
+          );
+        return store.put(lib(request), "set", {
+          ...set,
+          cursor,
+          version: set.version + 1,
+        });
+      }),
+    ),
   );
   app.post(base + "/imports/preview", async (request: any) => {
     const preview = store.preview(lib(request), request.body.files);
@@ -395,24 +431,24 @@ export async function buildApp(
   );
   app.put(base + "/files/:id", async (request: any) =>
     store.idempotent(request, () => {
-        const file = store.get(lib(request), request.params.id, "file");
-        if (file.hash !== request.body.expectedHash)
-          throw new AppError(
-            409,
-            "HASH_CONFLICT",
-            "The material changed. Your draft has not replaced it.",
-            { hash: file.hash, content: file.content },
-          );
-        const preview = store.preview(lib(request), [
-          { ...file, content: request.body.content },
-        ]);
-        store.commit(
-          lib(request),
-          preview.id,
-          request.body.acceptWarnings === true,
+      const file = store.get(lib(request), request.params.id, "file");
+      if (file.hash !== request.body.expectedHash)
+        throw new AppError(
+          409,
+          "HASH_CONFLICT",
+          "The material changed. Your draft has not replaced it.",
+          { hash: file.hash, content: file.content },
         );
-        return store.get(lib(request), file.id, "file");
-      }),
+      const preview = store.preview(lib(request), [
+        { ...file, content: request.body.content },
+      ]);
+      store.commit(
+        lib(request),
+        preview.id,
+        request.body.acceptWarnings === true,
+      );
+      return store.get(lib(request), file.id, "file");
+    }),
   );
   app.delete(base + "/files/:id", async (request: any) =>
     store.db.transaction(() => {
@@ -448,6 +484,10 @@ export async function buildApp(
         throw new AppError(409, "HASH_CONFLICT", "Note changed.", note);
       return store.saveNote(lib(request), {
         ...note,
+        title:
+          request.body.title === undefined
+            ? note.title
+            : String(request.body.title).slice(0, 200),
         content: String(request.body.content),
         version: note.version + 1,
       });

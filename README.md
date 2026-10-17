@@ -49,6 +49,8 @@ Two pairs make four.
 
 Put `Question` headings one level below a `Case` heading to share its passage. Keep choice, answer and solution headings one level deeper than the question. Preview reports missing keys and structural errors before committing; `npm run check-bank -- <file-or-folder>` runs the same checks from the command line. Missing keys remain readable but cannot be graded. Choices never shuffle. Review sets retain their membership and order after answers change.
 
+Practice splits by **Topic** (the bank's folder, such as `01-quantitative-methods`), **Source** (the file name) and **Chapter**; each option shows answered/total. The number strip colours finished questions by result (green correct, amber unsure, red wrong). The URL keeps the current page and open set, so refresh stays in place and the browser Back button returns to the previous view. Free-form notes live on the **Notes** page (Markdown, editable), together with tutor replies saved as AI notes; there is no per-question note box.
+
 The app tracks two distinct answers: the latest overall answer, and the answer within each set. Starting another set leaves that set blank while retaining the overall result. Sure/Unsure applies only to correct answers. A saved response means done, not mastery.
 
 ## CFA material prompts

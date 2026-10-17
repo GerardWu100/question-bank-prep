@@ -54,6 +54,7 @@ export function registerMaterialRoutes(
   // Unmatched re-import identities become new questions, as in an unanswered preview.
   app.post(base + "/imports/root-sync", async (request: any) => {
     const lib = request.params.libraryId;
+    store.syncPathLabels(lib);
     const files = await scanRoot(requireRoot());
     const fileHashes = new Map(files.map((f) => [f.path, hash(f.content)]));
     const activeLocal = store

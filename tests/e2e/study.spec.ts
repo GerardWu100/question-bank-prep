@@ -40,8 +40,6 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await page.getByRole("radio", { name: "Unsure", exact: true }).check();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
-  await page.getByLabel("My note").fill("Check the arithmetic.");
-  await page.getByRole("button", { name: "Save note", exact: true }).click();
   await page.getByRole("button", { name: "☆ Flag", exact: true }).click();
   await expect(page.getByRole("button", { name: "★ Flagged" })).toBeVisible();
   await page.getByRole("button", { name: "← All practice sets" }).click();
@@ -49,7 +47,6 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await expect(
     page.getByRole("button", { name: "B Four", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("My note")).toHaveValue("Check the arithmetic.");
   await page.screenshot({
     path: testInfo.outputPath("question-desktop.png"),
     fullPage: true,
@@ -69,34 +66,21 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
     `http://127.0.0.1:3000/api/libraries/${library.id}/overview`,
   );
   expect((await state.json()).counts.unsure).toBe(1);
-  const { questionIds } = await (
-    await request.post(
-      `http://127.0.0.1:3000/api/libraries/${library.id}/sets/preview`,
-      { data: {} },
-    )
-  ).json();
-  const question = await (
-    await request.get(
-      `http://127.0.0.1:3000/api/libraries/${library.id}/questions/${questionIds[0]}`,
-    )
-  ).json();
-  await page.getByLabel("My note").fill("Keep this unsaved draft.");
-  await request.patch(
-    `http://127.0.0.1:3000/api/libraries/${library.id}/questions/${question.id}/annotation`,
-    {
-      data: {
-        operationId: crypto.randomUUID(),
-        expectedVersion: question.annotation.version,
-        note: "Saved in another tab.",
-      },
-    },
-  );
+  // Refresh keeps the open set; Back returns to it from another page.
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Submit answer" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Notes", exact: true }).click();
+  await page.getByRole("button", { name: "New note" }).click();
+  await page.getByLabel("Title").fill("Regression checklist");
+  await page.getByLabel("Note (Markdown)").fill("Check the arithmetic.");
   await page.getByRole("button", { name: "Save note", exact: true }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page.getByLabel("My note")).toHaveValue(
-    "Keep this unsaved draft.",
-  );
-  await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
+  await expect(page.getByText("Regression checklist")).toBeVisible();
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Submit answer" }),
+  ).toBeVisible();
 });
 
 test("small viewport keeps navigation and material rendering within the viewport", async ({

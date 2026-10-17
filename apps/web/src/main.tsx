@@ -10,6 +10,7 @@ const pages = [
   "Practice",
   "Progress",
   "Ask AI",
+  "Notes",
   "Materials",
   "History",
   "Settings",
@@ -19,6 +20,17 @@ const DEFAULT_MODEL = "gpt-6.1-sol";
 /** Wait after the last filter change before asking the server for a count. */
 const COUNT_DEBOUNCE_MS = 200;
 const RUN_POLL_MS = 500;
+/** "01-quantitative-methods" -> "01 Quantitative Methods"; "qbank-2025" -> "Qbank 2025". */
+const labelOf = (slug: string) =>
+  slug.replace(/-/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+/** URL hash for a view, so refresh and the browser Back button keep the place. */
+const hashFor = (page: Page, setId?: string) =>
+  `#/${page.toLowerCase().replace(/ /g, "-")}${setId ? `/${setId}` : ""}`;
+const parseHash = (hash: string) => {
+  const [slug, setId] = hash.replace(/^#\/?/, "").split("/");
+  const page = pages.find((p) => hashFor(p) === `#/${slug}`) ?? "Practice";
+  return { page, setId: page === "Practice" ? setId : undefined };
+};
 const blankCounts = {
   total: 0,
   correct: 0,
@@ -47,7 +59,10 @@ function App() {
     [order, setOrder] = useState("source"),
     [flagged, setFlagged] = useState(false),
     [query, setQuery] = useState(""),
-    [note, setNote] = useState("");
+    [topic, setTopic] = useState(""),
+    [source, setSource] = useState(""),
+    [chapter, setChapter] = useState(""),
+    [noteDraft, setNoteDraft] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]),
     [file, setFile] = useState<any>(null),
     [content, setContent] = useState(""),
@@ -74,6 +89,7 @@ function App() {
     [materialRoot, setMaterialRoot] = useState(false);
   const latestQuestion = useRef<any>(null),
     queue = useRef(Promise.resolve()),
+    routeReady = useRef(false),
     intent = useRef(0);
   const scope = `/libraries/${library}`;
   const position = activeSet?.cursor ?? 0;
@@ -136,16 +152,26 @@ function App() {
       setMaterialRoot(configured);
       if (configured) await syncMaterialRoot();
       await refresh();
+      await showHash();
+      routeReady.current = true;
     });
+  }, [library]);
+  // Each view change becomes a browser history entry; Back/Forward replay them.
+  useEffect(() => {
+    if (!routeReady.current) return;
+    const next = hashFor(page, page === "Practice" ? activeSet?.id : undefined);
+    if (window.location.hash !== next) window.history.pushState(null, "", next);
+  }, [page, activeSet?.id]);
+  useEffect(() => {
+    const onPopState = () => void run(showHash);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, [library]);
   useEffect(() => {
     if (!library) return;
     void run(async () => {
-      if (page === "Materials")
-        await Promise.all([
-          loadFiles(),
-          api(`${scope}/notes`).then((data) => setNotes(data.notes)),
-        ]);
+      if (page === "Materials") await loadFiles();
+      if (page === "Notes") setNotes((await api(`${scope}/notes`)).notes);
       if (page === "Progress") await loadFocus();
       if (page === "History") setChats((await api(`${scope}/chats`)).chats);
       if (page === "Settings" || page === "Ask AI" || page === "Practice")
@@ -164,7 +190,6 @@ function App() {
     setQuestion(q);
     setDraft(q.setState.selection || "");
     setConfidence(q.setState.confidence || "sure");
-    setNote(q.annotation.note);
     setSaveStatus("");
     // Reopen this question's saved tutor conversation, if any, below the question.
     const prior = (await api(`${scope}/chats`)).chats.find(
@@ -177,6 +202,21 @@ function App() {
           )
         : null,
     );
+  };
+  /** Show the view named in the URL hash: a page, or an open practice set. */
+  const showHash = async () => {
+    const { page: target, setId } = parseHash(window.location.hash);
+    if (setId) {
+      try {
+        await openSet(setId);
+        return;
+      } catch {
+        // The set no longer exists; fall back to the practice home.
+      }
+    }
+    setQuestion(null);
+    setActiveSet(null);
+    setPage(target);
   };
   const openSet = async (id: string) => {
     const set = await api(`${scope}/sets/${id}`);
@@ -211,6 +251,19 @@ function App() {
           latestQuestion.current = updated;
           if (currentIntent === intent.current) {
             setQuestion(updated);
+            setActiveSet((current: any) =>
+              current?.id === setId
+                ? {
+                    ...current,
+                    itemStatuses: current.itemStatuses.map(
+                      (status: string, index: number) =>
+                        current.questionIds[index] === questionId
+                          ? updated.setState.status
+                          : status,
+                    ),
+                  }
+                : current,
+            );
             setConfidence(updated.setState.confidence || "sure");
             setSaveStatus("Saved");
             await refresh();
@@ -278,10 +331,15 @@ function App() {
       operationId: operation(),
       title: inFocus
         ? "Focus practice"
-        : statuses.length
-          ? `${statuses.join(" + ")} practice`
-          : "Practice set",
-      filters: { statuses, flagged, inFocus, query },
+        : [
+            topic && labelOf(topic),
+            source && labelOf(source),
+            chapter,
+            statuses.length && statuses.join(" + "),
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Practice set",
+      filters: { statuses, flagged, inFocus, query, topic, source, chapter },
       order,
       seed: Math.floor(Math.random() * 2147483647),
     });
@@ -293,14 +351,24 @@ function App() {
     if (!library) return;
     const timer = setTimeout(() => {
       api(`${scope}/sets/preview`, {
-        filters: { statuses, flagged, query },
+        filters: { statuses, flagged, query, topic, source, chapter },
         order,
       })
         .then((result) => setEligibleCount(result.count))
         .catch(() => setEligibleCount(0));
     }, COUNT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [library, overview, statuses, flagged, query, order]);
+  }, [
+    library,
+    overview,
+    statuses,
+    flagged,
+    query,
+    order,
+    topic,
+    source,
+    chapter,
+  ]);
   const saveMaterial = async (acceptWarnings = false): Promise<void> => {
     try {
       const saved = await api(
@@ -606,8 +674,65 @@ function App() {
             </div>
             <section className="panel">
               <h2>Build a practice set</h2>
+              <div className="filters">
+                {(
+                  [
+                    ["Topic", topic, setTopic, "topic"],
+                    ["Source", source, setSource, "source"],
+                    ["Chapter", chapter, setChapter, "chapter"],
+                  ] as const
+                ).map(([label, value, setValue, field]) => {
+                  // Each list narrows by the choices to its left.
+                  const rows = (overview.catalog ?? []).filter(
+                    (row: any) =>
+                      (field === "topic" || !topic || row.topic === topic) &&
+                      (field !== "chapter" || !source || row.source === source),
+                  );
+                  const options = new Map<
+                    string,
+                    { done: number; total: number }
+                  >();
+                  for (const row of rows) {
+                    const entry = options.get(row[field]) ?? {
+                      done: 0,
+                      total: 0,
+                    };
+                    entry.done += row.done;
+                    entry.total += row.total;
+                    options.set(row[field], entry);
+                  }
+                  return (
+                    <label key={field}>
+                      {label}
+                      <select
+                        value={value}
+                        onChange={(e) => {
+                          setValue(e.target.value);
+                          if (field === "topic") {
+                            setSource("");
+                            setChapter("");
+                          }
+                          if (field === "source") setChapter("");
+                        }}
+                      >
+                        <option value="">All</option>
+                        {[...options]
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([option, count]) => (
+                            <option key={option} value={option}>
+                              {field === "chapter"
+                                ? option.replace(/^Chapter\s+/i, "")
+                                : labelOf(option)}{" "}
+                              · {count.done}/{count.total}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
               <label>
-                Topic, source, or title
+                Search
                 <input
                   placeholder="Search your library"
                   value={query}
@@ -716,7 +841,7 @@ function App() {
                   key={id}
                   aria-label={`Question ${index + 1}`}
                   aria-current={index === position ? "step" : undefined}
-                  className={index === position ? "selected" : "secondary"}
+                  className={`${index === position ? "selected" : "secondary"} ${activeSet.itemStatuses?.[index] ?? ""}`}
                   onClick={() => void run(() => navigate(index))}
                 >
                   {index + 1}
@@ -824,24 +949,6 @@ function App() {
                   )}
                 </>
               )}
-              <label>
-                My note
-                <textarea
-                  rows={4}
-                  value={note}
-                  onChange={(e) => {
-                    setNote(e.target.value);
-                    setSaveStatus("Unsaved changes");
-                  }}
-                  placeholder="Explain this in your own words…"
-                />
-              </label>
-              <button
-                className="secondary"
-                onClick={() => void run(() => annotation({ note }))}
-              >
-                Save note
-              </button>
             </section>
             <div className="row">
               <button
@@ -1188,18 +1295,92 @@ function App() {
                 )}
               </>
             )}
-            <h2>AI notes</h2>
+          </>
+        )}
+        {library && page === "Notes" && (
+          <>
+            <div className="row">
+              <h1>Notes</h1>
+              <button
+                className="secondary"
+                onClick={() => setNoteDraft({ title: "", content: "" })}
+              >
+                New note
+              </button>
+            </div>
+            {noteDraft && (
+              <section className="panel">
+                <label>
+                  Title
+                  <input
+                    value={noteDraft.title}
+                    onChange={(e) =>
+                      setNoteDraft({ ...noteDraft, title: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Note (Markdown)
+                  <textarea
+                    rows={14}
+                    value={noteDraft.content}
+                    onChange={(e) =>
+                      setNoteDraft({ ...noteDraft, content: e.target.value })
+                    }
+                  />
+                </label>
+                <div className="row">
+                  <button
+                    className="secondary"
+                    onClick={() => setNoteDraft(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={busy || !noteDraft.content.trim()}
+                    onClick={() =>
+                      void run(async () => {
+                        const body = {
+                          title: noteDraft.title || "Study note",
+                          content: noteDraft.content,
+                          operationId: operation(),
+                        };
+                        await (noteDraft.id
+                          ? api(
+                              `${scope}/notes/${noteDraft.id}`,
+                              { ...body, expectedHash: noteDraft.hash },
+                              "PUT",
+                            )
+                          : api(`${scope}/notes`, body));
+                        setNoteDraft(null);
+                        setNotes((await api(`${scope}/notes`)).notes);
+                      })
+                    }
+                  >
+                    Save note
+                  </button>
+                </div>
+              </section>
+            )}
             {notes.length ? (
               notes.map((n) => (
                 <details className="panel" key={n.id}>
-                  <summary>{n.title} · AI-authored</summary>
+                  <summary>
+                    {n.title}
+                    {n.provenance === "ai" ? " · AI-authored" : ""}
+                  </summary>
                   <Markdown text={n.content} />
+                  {n.provenance !== "ai" && (
+                    <button className="quiet" onClick={() => setNoteDraft(n)}>
+                      Edit
+                    </button>
+                  )}
                 </details>
               ))
             ) : (
               <p className="muted">
-                Saved tutor replies will appear here, separate from your
-                sources.
+                No notes yet. Tutor replies saved with "Save as AI note" also
+                appear here.
               </p>
             )}
           </>

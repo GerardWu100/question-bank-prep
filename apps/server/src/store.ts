@@ -12,6 +12,20 @@ import {
   validateMaterialFile,
 } from "../../../packages/domain/src/index.js";
 
+/**
+ * Practice labels derived from a bank's path inside the material folder.
+ *
+ * topic  : first folder, e.g. "01-quantitative-methods"; "" for a file at the root.
+ * source : file name without ".md", e.g. "qbank-2025".
+ */
+export function pathLabels(path: string): { topic: string; source: string } {
+  const parts = path.split("/");
+  return {
+    topic: parts.length > 1 ? parts[0] : "",
+    source: parts[parts.length - 1].replace(/\.md$/i, ""),
+  };
+}
+
 export class AppError extends Error {
   constructor(
     public statusCode: number,
@@ -80,7 +94,9 @@ function automaticMatch(
     (q) => q.fingerprint === parsed.fingerprint && !excluded(q.id),
   );
   if (sameContent.length <= 1) return sameContent[0];
-  const sameContentAndHeading = sameContent.filter((q) => sameHeading(q, parsed));
+  const sameContentAndHeading = sameContent.filter((q) =>
+    sameHeading(q, parsed),
+  );
   return sameContentAndHeading.length === 1
     ? sameContentAndHeading[0]
     : undefined;
@@ -169,7 +185,9 @@ export class Store {
     const row = this.sql(
       "SELECT kind,data FROM records WHERE id=? AND library_id=?",
     ).get(recordId, libraryId) as any;
-    return row ? { kind: row.kind as string, value: JSON.parse(row.data) } : undefined;
+    return row
+      ? { kind: row.kind as string, value: JSON.parse(row.data) }
+      : undefined;
   }
   put(libraryId: string, kind: string, value: any) {
     this.sql(
@@ -178,7 +196,11 @@ export class Store {
     return value;
   }
   /** Put a record whose searchable text or active flag may have changed, and refresh its search entry. */
-  putIndexed(libraryId: string, kind: "question" | "file" | "note", value: any) {
+  putIndexed(
+    libraryId: string,
+    kind: "question" | "file" | "note",
+    value: any,
+  ) {
     this.put(libraryId, kind, value);
     this.sql("DELETE FROM search_index WHERE id=? AND library_id=?").run(
       value.id,
@@ -193,7 +215,10 @@ export class Store {
         value.title,
         `${value.caseText}\n${value.stem}\n${value.choices.map((choice: any) => `${choice.label}. ${choice.text}`).join("\n")}`,
       );
-    if ((kind === "file" && value.active && value.type === "note") || kind === "note")
+    if (
+      (kind === "file" && value.active && value.type === "note") ||
+      kind === "note"
+    )
       insert.run(
         value.id,
         libraryId,
@@ -307,7 +332,11 @@ export class Store {
       work,
     );
   }
-  preview(libraryId: string, files: any[], extra: Record<string, unknown> = {}) {
+  preview(
+    libraryId: string,
+    files: any[],
+    extra: Record<string, unknown> = {},
+  ) {
     const library = this.library(libraryId);
     if (!Array.isArray(files) || !files.length)
       throw new AppError(
@@ -538,7 +567,8 @@ export class Store {
           if (old) claimed.add(old.id);
           // Unchanged questions keep their version, so Focus links to them stay fresh.
           const unchanged =
-            old && CONTENT_FIELDS.every((field) => old[field] === parsed[field]);
+            old &&
+            CONTENT_FIELDS.every((field) => old[field] === parsed[field]);
           const state = old?.state ?? {
             selection: null,
             confidence: null,
@@ -554,8 +584,7 @@ export class Store {
             ...parsed,
             id: old?.id ?? id(),
             fileId,
-            source: incoming.source ?? file?.source ?? "",
-            topic: incoming.topic ?? file?.topic ?? "",
+            ...pathLabels(incoming.path),
             position,
             active: true,
             contentVersion: unchanged
@@ -599,8 +628,7 @@ export class Store {
           content: incoming.content,
           hash: incoming.hash,
           type: incoming.type,
-          topic: incoming.topic ?? "",
-          source: incoming.source ?? "",
+          ...pathLabels(incoming.path),
           version: revision,
           active: true,
           local: file?.local ?? incoming.local ?? false,
@@ -625,6 +653,36 @@ export class Store {
       return result;
     })();
   }
+  /** Re-derive topic/source labels from file paths; unchanged files skip import, so sync does this. */
+  syncPathLabels(libraryId: string) {
+    const files = new Map(
+      this.list(libraryId, "file").map((file) => [file.id, file]),
+    );
+    this.db.transaction(() => {
+      for (const q of this.list(libraryId, "question")) {
+        const file = files.get(q.fileId);
+        if (!file) continue;
+        const labels = pathLabels(file.path);
+        if (q.topic !== labels.topic || q.source !== labels.source)
+          this.put(libraryId, "question", { ...q, ...labels });
+      }
+    })();
+  }
+  /** A set plus `itemStatuses`, one grade per question; unsubmitted items are "unanswered". */
+  presentSet(libraryId: string, set: any) {
+    return {
+      ...set,
+      itemStatuses: set.items.map((item: any) =>
+        item.submitted
+          ? grade(
+              item.selection,
+              this.get(libraryId, item.questionId, "question").answerKey,
+              item.confidence,
+            )
+          : "unanswered",
+      ),
+    };
+  }
   question(libraryId: string, questionId: string, setId?: string) {
     const question = this.get(libraryId, questionId, "question");
     let setState;
@@ -636,9 +694,7 @@ export class Store {
     }
     return presentQuestion(question, {
       setState,
-      reveal: setState
-        ? setState.submitted
-        : Boolean(question.state.selection),
+      reveal: setState ? setState.submitted : Boolean(question.state.selection),
     });
   }
   answer(libraryId: string, questionId: string, body: any) {

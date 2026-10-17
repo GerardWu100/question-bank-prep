@@ -283,6 +283,31 @@ legend {
 .question-strip button {
   padding: 0.3rem 0.65rem;
 }
+/* Finished questions in the current set, by result. */
+.question-strip button.correct {
+  background: #dcebdc;
+  border-color: #6f9f73;
+}
+.question-strip button.unsure {
+  background: #f3e8c8;
+  border-color: #c4a052;
+}
+.question-strip button.wrong {
+  background: #f3d9d4;
+  border-color: #b5675b;
+}
+.question-strip button.ungradable {
+  background: #e4e4dc;
+}
+.question-strip button.selected {
+  outline: 2px solid #194b45;
+  outline-offset: 1px;
+}
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 1rem;
+}
 .choices {
   display: grid;
   gap: 0.7rem;
