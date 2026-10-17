@@ -123,6 +123,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, library_id TEXT NOT NULL REFERENCES libraries(id), kind TEXT NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS records_kind ON records(library_id,kind);
       CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, response TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
       CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(id UNINDEXED,library_id UNINDEXED,kind UNINDEXED,title,text);
       CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY); INSERT OR IGNORE INTO schema_version VALUES(1);`);
   }

@@ -431,3 +431,39 @@ describe("login cookie behind an HTTPS proxy", () => {
     expect(await login(false)).not.toContain("Secure");
   });
 });
+
+describe("login sessions", () => {
+  it("survive a restart, renew on open, and use SameSite=Lax", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "study-session-"));
+    const databasePath = join(directory, "study.sqlite");
+    try {
+      const first = await buildApp({ databasePath, password: "pw" });
+      const login = await first.app.inject({
+        method: "POST",
+        url: "/api/session",
+        payload: { password: "pw" },
+      });
+      const cookie = String(login.headers["set-cookie"]);
+      expect(cookie).toContain("SameSite=Lax");
+      const token = /study_session=([^;]+)/.exec(cookie)![1];
+      await first.app.close();
+      const second = await buildApp({ databasePath, password: "pw" });
+      const reopened = await second.app.inject({
+        url: "/api/session",
+        cookies: { study_session: token },
+      });
+      expect(reopened.json()).toEqual({ authenticated: true });
+      expect(String(reopened.headers["set-cookie"])).toContain(
+        "Max-Age=2592000",
+      );
+      const stranger = await second.app.inject({
+        url: "/api/session",
+        cookies: { study_session: "not-a-session" },
+      });
+      expect(stranger.json()).toEqual({ authenticated: false });
+      await second.app.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});

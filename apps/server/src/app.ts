@@ -14,7 +14,8 @@ import {
 
 /** Hostnames that count as this computer; anything else needs a password. */
 export const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1", "[::1]"];
-const SESSION_MILLISECONDS = 24 * 60 * 60 * 1000;
+/** A login lasts this long and is renewed each time the app is opened (sliding expiry). */
+const SESSION_MILLISECONDS = 30 * 24 * 60 * 60 * 1000;
 
 export async function buildApp(
   options: {
@@ -39,9 +40,35 @@ export async function buildApp(
     trustProxy: options.trustProxy ?? false,
   });
   const store = new Store(options.databasePath ?? ":memory:");
-  const sessions = new Map<string, number>();
+  // Sessions live in SQLite (only a hash of each token), so a restart or an image
+  // update keeps you signed in.
+  const sessionExpiry = (token: string) =>
+    (
+      store.db
+        .prepare("SELECT expires_at FROM sessions WHERE token_hash=?")
+        .get(hash(token)) as { expires_at: number } | undefined
+    )?.expires_at ?? 0;
   const signedIn = (request: any) =>
-    (sessions.get(request.cookies.study_session ?? "") ?? 0) > Date.now();
+    sessionExpiry(request.cookies.study_session ?? "") > Date.now();
+  const setSessionCookie = (request: any, reply: any, token: string) =>
+    reply.setCookie("study_session", token, {
+      httpOnly: true,
+      // Lax keeps you signed in when you arrive from a link on another site; the
+      // origin check below still refuses cross-site writes.
+      sameSite: "lax",
+      path: "/",
+      secure: request.protocol === "https",
+      maxAge: SESSION_MILLISECONDS / 1000,
+    });
+  /** Start or extend a session: store its new expiry and refresh the cookie. */
+  const renewSession = (request: any, reply: any, token: string) => {
+    store.db
+      .prepare(
+        "INSERT INTO sessions(token_hash, expires_at) VALUES(?, ?) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at",
+      )
+      .run(hash(token), Date.now() + SESSION_MILLISECONDS);
+    setSessionCookie(request, reply, token);
+  };
   const sameHost = (origin: string, host: string | undefined) => {
     try {
       return new URL(origin).host === host;
@@ -165,9 +192,18 @@ export async function buildApp(
   app.get("/api/health", { config: { public: true } }, async () => ({
     status: "ok",
   }));
-  app.get("/api/session", { config: { public: true } }, async (request) => ({
-    authenticated: !options.password || signedIn(request),
-  }));
+  app.get(
+    "/api/session",
+    { config: { public: true } },
+    async (request: any, reply) => {
+      if (!options.password) return { authenticated: true };
+      const authenticated = signedIn(request);
+      // Opening the app renews the login, so regular use never signs you out.
+      if (authenticated)
+        renewSession(request, reply, request.cookies.study_session);
+      return { authenticated };
+    },
+  );
   app.post(
     "/api/session",
     {
@@ -181,15 +217,10 @@ export async function buildApp(
         !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
       )
         throw new AppError(401, "INVALID_PASSWORD", "Password is incorrect.");
-      const token = randomBytes(32).toString("hex");
-      sessions.set(token, Date.now() + SESSION_MILLISECONDS);
-      reply.setCookie("study_session", token, {
-        httpOnly: true,
-        sameSite: "strict",
-        path: "/",
-        secure: request.protocol === "https",
-        maxAge: SESSION_MILLISECONDS / 1000,
-      });
+      store.db
+        .prepare("DELETE FROM sessions WHERE expires_at < ?")
+        .run(Date.now());
+      renewSession(request, reply, randomBytes(32).toString("hex"));
       return { authenticated: true };
     },
   );
@@ -197,7 +228,9 @@ export async function buildApp(
     "/api/session",
     { config: { public: true } },
     async (request, reply) => {
-      sessions.delete(request.cookies.study_session ?? "");
+      store.db
+        .prepare("DELETE FROM sessions WHERE token_hash=?")
+        .run(hash(request.cookies.study_session ?? ""));
       reply.clearCookie("study_session");
       return { authenticated: false };
     },
