@@ -56,7 +56,7 @@ The app tracks two distinct answers: the latest overall answer, and the answer w
 The CFA Level II bank is built in two steps, both run in the private `cfa` repository so no study text lands in this public repository:
 
 1. **PDF → Markdown:** [docs/prompts/pdf-to-markdown.md](docs/prompts/pdf-to-markdown.md) converted `materials/` PDFs into `md_materials/` (finished).
-2. **Markdown → question bank:** the `cfa-question-bank` skill in `cfa/.agents/skills/cfa-question-bank/` (`SKILL.md`, `template.md`, `sources.md`) extracts questions into `cfa/question_bank/<NN-topic>/<source>.md`.
+2. **Markdown → question bank:** send [docs/prompts/extract-questions.md](docs/prompts/extract-questions.md); it runs the `cfa-question-bank` skill in `cfa/.agents/skills/cfa-question-bank/` (`SKILL.md`, `template.md`, `sources.md`), which extracts questions into `cfa/question_bank/<NN-topic>/<source>.md`.
 
 ## AI and calculator
 
