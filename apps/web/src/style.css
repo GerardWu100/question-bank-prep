@@ -626,14 +626,6 @@ pre {
 .composer-actions [role="status"] {
   margin-right: auto;
 }
-footer {
-  padding: 1.3rem clamp(1rem, 5vw, 5rem);
-  border-top: 1px solid var(--c-d9ddd2);
-  font-size: 0.75rem;
-  color: var(--c-7b847c);
-  display: flex;
-  justify-content: space-between;
-}
 @media (max-width: 600px) {
   :root {
     font-size: 16px;
@@ -668,9 +660,6 @@ footer {
   }
   .question-strip {
     max-width: calc(100vw - 2rem);
-  }
-  footer span {
-    display: none;
   }
 }
 .citation-backdrop {

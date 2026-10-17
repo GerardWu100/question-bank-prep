@@ -467,3 +467,56 @@ describe("login sessions", () => {
     }
   });
 });
+
+describe("exports", () => {
+  it("downloads my notes and AI notes separately as Markdown, and progress as CSV", async () => {
+    const { app, store } = await buildApp();
+    try {
+      const library = store.createLibrary("Export test");
+      const preview = store.preview(library.id, [
+        {
+          path: "01-quantitative-methods/bank.md",
+          content:
+            '# Chapter LM01 Basics\n## Question 1\nTwo "plus" two?\n### Choices\nA. 3\nB. 4\nC. 5\n### Answer\nB\n',
+        },
+      ]);
+      store.commit(library.id, preview.id, true);
+      const question = store.list(library.id, "question")[0];
+      store.answer(library.id, question.id, {
+        operationId: "a",
+        expectedVersion: 0,
+        selection: "A",
+      });
+      store.saveNote(library.id, {
+        id: "n1",
+        title: "Mine",
+        content: "My text",
+        provenance: "human-saved",
+        version: 1,
+      });
+      store.saveNote(library.id, {
+        id: "n2",
+        title: "Tutor",
+        content: "AI text",
+        provenance: "ai",
+        version: 1,
+      });
+      const base = `/api/libraries/${library.id}/export`;
+      const mine = await app.inject(`${base}/notes?origin=mine`);
+      expect(mine.headers["content-disposition"]).toContain("my-notes.md");
+      expect(mine.body).toContain("## Mine");
+      expect(mine.body).not.toContain("AI text");
+      const ai = await app.inject(`${base}/notes?origin=ai`);
+      expect(ai.body).toContain("## Tutor");
+      expect(ai.body).not.toContain("My text");
+      const progress = await app.inject(`${base}/progress`);
+      expect(progress.headers["content-type"]).toContain("text/csv");
+      expect(progress.body.split("\n")).toEqual([
+        "topic,source,chapter,question,stem,result,your_answer,answer_key,confidence,flagged",
+        '"01-quantitative-methods","bank","Chapter LM01 Basics","1","Two ""plus"" two?","wrong","A","B","",""',
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+});

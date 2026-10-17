@@ -182,7 +182,8 @@ function App() {
     [topic, setTopic] = useState(""),
     [source, setSource] = useState(""),
     [chapter, setChapter] = useState(""),
-    [noteDraft, setNoteDraft] = useState<any>(null);
+    [noteDraft, setNoteDraft] = useState<any>(null),
+    [notesView, setNotesView] = useState<"mine" | "ai">("mine");
   const [importPreview, setImportPreview] = useState<any>(null),
     [importPath, setImportPath] = useState("questions.md"),
     [importContent, setImportContent] = useState(""),
@@ -1710,12 +1711,45 @@ function App() {
           <>
             <div className="row">
               <h1>Notes</h1>
-              <button
-                className="secondary"
-                onClick={() => setNoteDraft({ title: "", content: "" })}
-              >
-                New note
-              </button>
+              <span className="deck-actions">
+                <a
+                  href={`/api${scope}/export/notes?origin=${notesView}`}
+                  download
+                >
+                  Export {notesView === "ai" ? "AI notes" : "my notes"}
+                </a>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setNotesView("mine");
+                    setNoteDraft({ title: "", content: "" });
+                  }}
+                >
+                  New note
+                </button>
+              </span>
+            </div>
+            <div className="chips">
+              {(
+                [
+                  ["mine", "My notes"],
+                  ["ai", "AI notes"],
+                ] as const
+              ).map(([view, label]) => (
+                <button
+                  key={view}
+                  aria-pressed={notesView === view}
+                  className={notesView === view ? "selected" : "secondary"}
+                  onClick={() => setNotesView(view)}
+                >
+                  {label} ·{" "}
+                  {
+                    notes.filter(
+                      (n) => (n.provenance === "ai") === (view === "ai"),
+                    ).length
+                  }
+                </button>
+              ))}
             </div>
             {noteDraft && (
               <section className="panel">
@@ -1771,25 +1805,27 @@ function App() {
                 </div>
               </section>
             )}
-            {notes.length ? (
-              notes.map((n) => (
-                <details className="panel" key={n.id}>
-                  <summary>
-                    {n.title}
-                    {n.provenance === "ai" ? " · AI-authored" : ""}
-                  </summary>
-                  <Markdown text={n.content} />
-                  {n.provenance !== "ai" && (
-                    <button className="quiet" onClick={() => setNoteDraft(n)}>
-                      Edit
-                    </button>
-                  )}
-                </details>
-              ))
+            {notes.some(
+              (n) => (n.provenance === "ai") === (notesView === "ai"),
+            ) ? (
+              notes
+                .filter((n) => (n.provenance === "ai") === (notesView === "ai"))
+                .map((n) => (
+                  <details className="panel" key={n.id}>
+                    <summary>{n.title}</summary>
+                    <Markdown text={n.content} />
+                    {n.provenance !== "ai" && (
+                      <button className="quiet" onClick={() => setNoteDraft(n)}>
+                        Edit
+                      </button>
+                    )}
+                  </details>
+                ))
             ) : (
               <p className="muted">
-                No notes yet. Tutor replies saved with "Save as AI note" also
-                appear here.
+                {notesView === "ai"
+                  ? 'No AI notes yet. Use "Save as AI note" under a tutor reply.'
+                  : "No notes yet."}
               </p>
             )}
           </>
@@ -1914,8 +1950,8 @@ function App() {
                   >
                     Save library settings
                   </button>
-                  <a href={`/api${scope}/export`} download="study-library.json">
-                    Export study data
+                  <a href={`/api${scope}/export/progress`} download>
+                    Export progress (CSV)
                   </a>
                 </div>
               </section>
@@ -2073,9 +2109,6 @@ function App() {
           </section>
         </div>
       )}
-      <footer>
-        Study Ledger <span>Personal research & learning</span>
-      </footer>
     </>
   );
 }
