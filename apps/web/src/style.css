@@ -864,3 +864,14 @@ details.deck[open] > summary {
 .reasoning summary {
   cursor: pointer;
 }
+/* Phone widths: long option text (chapter names) must not widen the page, and the
+   header tools drop under the brand instead of pushing past the edge. */
+select {
+  max-width: 100%;
+}
+.filters label {
+  min-width: 0;
+}
+header {
+  flex-wrap: wrap;
+}
