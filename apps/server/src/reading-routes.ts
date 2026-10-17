@@ -62,6 +62,50 @@ export async function listReadingFiles(root: string): Promise<string[]> {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
+/** Most files one list_files call returns. */
+const MAX_LISTED_FILES = 200;
+
+/**
+ * Files in the notes folder for the tutor, like ls/find: optional folder prefix and a
+ * glob ("*" within a name, "**" across folders, "?" one character), with line counts.
+ * Returns [{ path, lines }].
+ */
+export async function listReadingFilesWithSizes(
+  root: string,
+  folder = "",
+  glob = "",
+) {
+  const pattern = glob
+    ? new RegExp(
+        "^" +
+          glob
+            .split("**")
+            .map((part) =>
+              part
+                .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+                .replace(/\*/g, "[^/]*")
+                .replace(/\?/g, "[^/]"),
+            )
+            .join(".*") +
+          "$",
+        "i",
+      )
+    : null;
+  const prefix = folder.replace(/^\.?\/+|\/+$/g, "");
+  const matches = (await listReadingFiles(root)).filter(
+    (path) =>
+      (!prefix || path.startsWith(`${prefix}/`)) &&
+      (!pattern || pattern.test(path) || pattern.test(path.split("/").pop()!)),
+  );
+  return Promise.all(
+    matches.slice(0, MAX_LISTED_FILES).map(async (path) => ({
+      path,
+      lines: (await readFile(await readingPath(root, path), "utf8")).split("\n")
+        .length,
+    })),
+  );
+}
+
 /** Most search hits the tutor gets per query, and longest snippet per hit. */
 const MAX_SEARCH_HITS = 20;
 const SNIPPET_CHARACTERS = 240;

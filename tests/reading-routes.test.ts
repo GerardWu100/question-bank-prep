@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp } from "../apps/server/src/app.js";
 import {
+  listReadingFilesWithSizes,
   readReadingLines,
   registerReadingRoutes,
   runRipgrep,

@@ -7,8 +7,6 @@ import { normalizeContext, type Context, type Tool, type Message } from '@earend
 
 const MAX_PROMPT_LENGTH = 80_000;
 const MAX_REPLY_LENGTH = 100_000;
-/** Output-token budget per request; reasoning tokens count against it, so keep it roomy. */
-const MAX_OUTPUT_TOKENS = 32_000;
 /** Thinking levels the pinned adapter accepts, lowest to highest. */
 export const THINKING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
@@ -87,7 +85,7 @@ export class SubscriptionProvider implements StudyProvider {
       let terminal = false;
       let continueTools = false;
       // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
-      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', maxTokens: MAX_OUTPUT_TOKENS, ...(effort ? { reasoningEffort: effort, reasoningSummary: 'detailed' as const } : {}) })) {
+      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'detailed' as const } : {}) })) {
         if (event.type === 'text_delta') {
           length += event.delta.length;
           if (length > MAX_REPLY_LENGTH) { controller.abort(); yield { type: 'error', code: 'output_limit', message: 'Reply exceeded the output limit.' }; return; }
