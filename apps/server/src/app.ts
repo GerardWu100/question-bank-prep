@@ -233,10 +233,14 @@ export async function buildApp(
         const model = request.body.settings?.model;
         if (model !== undefined && (typeof model !== "string" || !model))
           throw new AppError(400, "INVALID_MODEL", "Choose a model by its ID.");
+        const effort = request.body.settings?.effort;
+        if (effort !== undefined && (typeof effort !== "string" || !effort))
+          throw new AppError(400, "INVALID_EFFORT", "Choose a thinking level.");
         const settings = {
           ...library.settings,
           ...(labels ? { choiceLabels: labels } : {}),
           ...(model ? { model } : {}),
+          ...(effort ? { effort } : {}),
         };
         const name =
           request.body.name === undefined

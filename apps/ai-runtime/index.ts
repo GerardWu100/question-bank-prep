@@ -7,12 +7,18 @@ import { normalizeContext, type Context, type Tool, type Message } from '@earend
 
 const MAX_PROMPT_LENGTH = 80_000;
 const MAX_REPLY_LENGTH = 100_000;
+/** Output-token budget per request; reasoning tokens count against it, so keep it roomy. */
+const MAX_OUTPUT_TOKENS = 32_000;
+/** Thinking levels the pinned adapter accepts, lowest to highest. */
+export const THINKING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
+type CatalogEntry = { slug: string; display_name?: string; visibility?: string; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string }[] };
 const REQUEST_TIMEOUT_MS = 120_000;
 const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export type AIEvent = { type: 'text'; text: string } | { type: 'done'; model: string; provider: string } | { type: 'error'; code: string; message: string };
-export interface ModelStatus { id: string; name: string; enabled: boolean; reason?: string }
+export interface ModelStatus { id: string; name: string; enabled: boolean; reason?: string; efforts: ThinkingEffort[]; defaultEffort?: ThinkingEffort }
 export interface AccountStatus { available: boolean; provider: string; route: string; reason?: string; models: ModelStatus[] }
-export interface AIRequest { model: string; prompt: string; systemPrompt?: string; signal?: AbortSignal; history?: { role: 'user' | 'assistant'; content: string }[]; tools?: Tool[]; executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown> }
+export interface AIRequest { model: string; effort?: string; prompt: string; systemPrompt?: string; signal?: AbortSignal; history?: { role: 'user' | 'assistant'; content: string }[]; tools?: Tool[]; executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown> }
 export interface StudyProvider { status(): Promise<AccountStatus>; models(): Promise<ModelStatus[]>; stream(request: AIRequest): AsyncGenerator<AIEvent> }
 
 /** Read existing subscription credentials without copying or refreshing Codex's rotating session. */
@@ -20,7 +26,7 @@ export class SubscriptionProvider implements StudyProvider {
   private readonly codexDirectory: string;
   constructor(codexDirectory = process.env.CODEX_HOME || join(homedir(), '.codex')) { this.codexDirectory = codexDirectory; }
 
-  private async credentials(): Promise<{ access: string; catalog: { slug: string; display_name?: string; visibility?: string }[] }> {
+  private async credentials(): Promise<{ access: string; catalog: CatalogEntry[] }> {
     let auth;
     let catalog;
     try {
@@ -38,14 +44,19 @@ export class SubscriptionProvider implements StudyProvider {
 
   async status(): Promise<AccountStatus> {
     let reason: string | undefined;
-    let catalog: { slug: string; display_name?: string; visibility?: string }[] = [];
+    let catalog: CatalogEntry[] = [];
     try { catalog = (await this.credentials()).catalog; } catch (error) { reason = (error as Error).message; }
     // Every model Codex lists for this account (hidden internal ones skipped), in Codex's
     // order; usable only when the pinned adapter can call it.
     const supported = new Set(openaiCodexProvider().getModels().map(model => model.id));
     const models = catalog
       .filter(entry => entry.visibility !== 'hide')
-      .map(entry => ({ id: entry.slug, name: entry.display_name || entry.slug, enabled: !reason && supported.has(entry.slug), reason: supported.has(entry.slug) ? undefined : 'Not supported by the pinned subscription adapter.' }));
+      .map(entry => {
+        // Thinking levels: what Codex lists for the model, limited to what the adapter can send.
+        const efforts = THINKING_EFFORTS.filter(effort => (entry.supported_reasoning_levels ?? []).some(level => level.effort === effort));
+        const defaultEffort = efforts.find(effort => effort === entry.default_reasoning_level);
+        return { id: entry.slug, name: entry.display_name || entry.slug, enabled: !reason && supported.has(entry.slug), reason: supported.has(entry.slug) ? undefined : 'Not supported by the pinned subscription adapter.', efforts, defaultEffort };
+      });
     return { available: models.some(model => model.enabled), provider: 'openai-codex', route: 'ChatGPT subscription · read-only Codex login', reason, models };
   }
 
@@ -57,6 +68,10 @@ export class SubscriptionProvider implements StudyProvider {
     const account = await this.status();
     if (!account.models.some(model => model.id === request.model && model.enabled)) { yield { type: 'error', code: 'setup_required', message: account.reason ?? 'Selected model is unavailable. No model was substituted.' }; return; }
     const model = openaiCodexProvider().getModels().find(model => model.id === request.model)!;
+    // Without an explicit level the adapter switches reasoning off, so always send one:
+    // the requested level when the model supports it, else the model's catalog default.
+    const status = account.models.find(entry => entry.id === request.model)!;
+    const effort = status.efforts.find(level => level === request.effort) ?? status.defaultEffort;
     const controller = new AbortController();
     const abort = () => controller.abort();
     request.signal?.addEventListener('abort', abort, { once: true });
@@ -71,7 +86,7 @@ export class SubscriptionProvider implements StudyProvider {
       let terminal = false;
       let continueTools = false;
       // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
-      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', maxTokens: 4096 })) {
+      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', maxTokens: MAX_OUTPUT_TOKENS, ...(effort ? { reasoningEffort: effort } : {}) })) {
         if (event.type === 'text_delta') {
           length += event.delta.length;
           if (length > MAX_REPLY_LENGTH) { controller.abort(); yield { type: 'error', code: 'output_limit', message: 'Reply exceeded the output limit.' }; return; }

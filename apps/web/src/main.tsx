@@ -1868,6 +1868,50 @@ function App() {
                   </option>
                 ))}
               </select>
+              {(() => {
+                // Thinking levels come from the chosen model; Codex's default is used until set.
+                const entry = settings?.models?.find(
+                  (m: any) => m.id === model,
+                );
+                const efforts: string[] = entry?.efforts ?? [];
+                if (!efforts.length) return null;
+                const effort = efforts.includes(
+                  librarySettings?.settings?.effort,
+                )
+                  ? librarySettings.settings.effort
+                  : (entry.defaultEffort ?? efforts[0]);
+                return (
+                  <label>
+                    Thinking
+                    <select
+                      value={effort}
+                      disabled={busy || !librarySettings}
+                      onChange={(e) =>
+                        void run(async () => {
+                          setLibrarySettings(
+                            await api(
+                              `${scope}/settings`,
+                              {
+                                operationId: operation(),
+                                expectedVersion: librarySettings.version,
+                                settings: { effort: e.target.value },
+                              },
+                              "PATCH",
+                            ),
+                          );
+                        })
+                      }
+                    >
+                      {efforts.map((level) => (
+                        <option key={level} value={level}>
+                          {level === "xhigh" ? "Extra high" : labelOf(level)}
+                          {level === entry.defaultEffort ? " (default)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              })()}
             </section>
             <section className="panel">
               <h2>Configured material folder</h2>
