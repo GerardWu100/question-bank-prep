@@ -856,3 +856,11 @@ details.deck > summary h2 {
 details.deck[open] > summary {
   margin-bottom: 0.8rem;
 }
+.reasoning {
+  margin-bottom: 0.6rem;
+  font-size: 0.9em;
+  color: var(--c-607169);
+}
+.reasoning summary {
+  cursor: pointer;
+}

@@ -58,6 +58,28 @@ describe('durable tutor runs', () => {
       expect(saved.messages[1].content).toBe('Started');
     } finally { await app.close(); }
   });
+  it('saves the reasoning summary beside the reply and passes the library thinking level', async () => {
+    let effort: string | undefined;
+    const provider = { status: async () => ({ available: true, models: [] }), async *stream(request: any) {
+      effort = request.effort;
+      yield { type: 'thinking', text: 'Discount each dividend.' };
+      yield { type: 'text', text: 'Value is $48.87.' };
+      yield { type: 'done', model: 'gpt-6.1-sol', provider: 'openai-codex' };
+    } };
+    const { app } = await buildApp({ provider });
+    try {
+      const library = (await app.inject({ method: 'POST', url: '/api/libraries', payload: { name: 'Reasoning test' } })).json();
+      const base = `/api/libraries/${library.id}`;
+      const patched = await app.inject({ method: 'PATCH', url: `${base}/settings`, payload: { operationId: 'effort', expectedVersion: (await app.inject(`${base}/settings`)).json().version, settings: { effort: 'high' } } });
+      expect(patched.json()).toMatchObject({ settings: { effort: 'high' } });
+      const chat = (await app.inject({ method: 'POST', url: `${base}/chats`, payload: {} })).json();
+      await app.inject({ method: 'POST', url: `${base}/chats/${chat.id}/messages`, payload: { text: 'Value?', operationId: 'reasoning-turn', stream: true } });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const reply = (await app.inject(`${base}/chats/${chat.id}`)).json().messages[1];
+      expect(reply).toMatchObject({ status: 'completed', content: 'Value is $48.87.', reasoning: 'Discount each dividend.' });
+      expect(effort).toBe('high');
+    } finally { await app.close(); }
+  });
   it('retains partial text as interrupted and never invents terminal success', async () => {
     const provider = { status: async () => ({ available: true, models: [] }), async *stream() { yield { type: 'text', text: 'Partial' }; } };
     const { app } = await buildApp({ provider });

@@ -43,8 +43,9 @@ registerReadingRoutes(
 const webDirectory = resolve(root, "apps/web/dist");
 if (existsSync(webDirectory)) {
   await app.register(staticFiles, { root: webDirectory });
+  // A missing build file is a 404, not the page: an old tab then fails clearly.
   app.setNotFoundHandler((request, reply) =>
-    request.url.startsWith("/api/")
+    request.url.startsWith("/api/") || request.url.startsWith("/assets/")
       ? reply.send(new AppError(404, "NOT_FOUND", "Route not found."))
       : reply.sendFile("index.html"),
   );

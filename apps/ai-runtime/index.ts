@@ -15,7 +15,7 @@ export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
 type CatalogEntry = { slug: string; display_name?: string; visibility?: string; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string }[] };
 const REQUEST_TIMEOUT_MS = 120_000;
 const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-export type AIEvent = { type: 'text'; text: string } | { type: 'done'; model: string; provider: string } | { type: 'error'; code: string; message: string };
+export type AIEvent = { type: 'text'; text: string } | { type: 'thinking'; text: string } | { type: 'done'; model: string; provider: string } | { type: 'error'; code: string; message: string };
 export interface ModelStatus { id: string; name: string; enabled: boolean; reason?: string; efforts: ThinkingEffort[]; defaultEffort?: ThinkingEffort }
 export interface AccountStatus { available: boolean; provider: string; route: string; reason?: string; models: ModelStatus[] }
 export interface AIRequest { model: string; effort?: string; prompt: string; systemPrompt?: string; signal?: AbortSignal; history?: { role: 'user' | 'assistant'; content: string }[]; tools?: Tool[]; executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown> }
@@ -68,8 +68,9 @@ export class SubscriptionProvider implements StudyProvider {
     const account = await this.status();
     if (!account.models.some(model => model.id === request.model && model.enabled)) { yield { type: 'error', code: 'setup_required', message: account.reason ?? 'Selected model is unavailable. No model was substituted.' }; return; }
     const model = openaiCodexProvider().getModels().find(model => model.id === request.model)!;
-    // Without an explicit level the adapter switches reasoning off, so always send one:
-    // the requested level when the model supports it, else the model's catalog default.
+    // Always send a level so the library's choice applies: the requested level when the
+    // model supports it, else the model's catalog default. Detailed summaries are requested
+    // so the UI can show the reasoning; short reasoning may return none.
     const status = account.models.find(entry => entry.id === request.model)!;
     const effort = status.efforts.find(level => level === request.effort) ?? status.defaultEffort;
     const controller = new AbortController();
@@ -86,11 +87,14 @@ export class SubscriptionProvider implements StudyProvider {
       let terminal = false;
       let continueTools = false;
       // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
-      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', maxTokens: MAX_OUTPUT_TOKENS, ...(effort ? { reasoningEffort: effort } : {}) })) {
+      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', maxTokens: MAX_OUTPUT_TOKENS, ...(effort ? { reasoningEffort: effort, reasoningSummary: 'detailed' as const } : {}) })) {
         if (event.type === 'text_delta') {
           length += event.delta.length;
           if (length > MAX_REPLY_LENGTH) { controller.abort(); yield { type: 'error', code: 'output_limit', message: 'Reply exceeded the output limit.' }; return; }
           yield { type: 'text', text: event.delta };
+        } else if (event.type === 'thinking_delta') {
+          // Reasoning summary text (the provider exposes summaries, not raw reasoning).
+          yield { type: 'thinking', text: event.delta };
         } else if (event.type === 'error') {
           yield { type: 'error', code: controller.signal.aborted ? 'cancelled' : 'provider_error', message: controller.signal.aborted ? 'Generation stopped.' : 'Subscription request failed. Check Codex sign-in and account availability.' };
           return;

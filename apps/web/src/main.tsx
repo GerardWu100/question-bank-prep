@@ -684,6 +684,13 @@ function App() {
     <>
       {chat?.messages?.map((m: any) => (
         <article key={m.id} className={`message ${m.role}`}>
+          {m.reasoning && (
+            // The model's reasoning summary, folded away until asked for.
+            <details className="reasoning">
+              <summary>Reasoning</summary>
+              <Markdown text={m.reasoning} />
+            </details>
+          )}
           <Markdown text={m.content || (m.status === "running" ? "…" : "")} />
           {m.sources?.length > 0 && (
             <div className="chips">

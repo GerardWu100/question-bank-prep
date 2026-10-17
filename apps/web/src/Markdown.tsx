@@ -75,13 +75,21 @@ function alignFenceIndents(text: string) {
  * Lines holding two "$$" (a one-line display formula) are left alone.
  */
 function prepareMarkdown(text: string) {
-  return alignFenceIndents(text)
-    .replaceAll("\\$", ESCAPED_DOLLAR)
-    .replace(/^([ \t]*)\$\$[ \t]*(?=\S)(?!.*\$\$)/gm, "$1$$$$\n")
-    .replace(
-      /^(?!.*\$\$.*\$\$)(?![ \t]*\$\$)(.*\S)[ \t]*\$\$[ \t]*$/gm,
-      "$1\n$$$$",
-    );
+  return (
+    alignFenceIndents(text)
+      // \[ … \] and \( … \) (common in AI replies) become $$ … $$ and $ … $.
+      .replace(
+        /\\\[([\s\S]+?)\\\]/g,
+        (_, math) => `\n$$$$\n${math.trim()}\n$$$$\n`,
+      )
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_, math) => `$${math.trim()}$`)
+      .replaceAll("\\$", ESCAPED_DOLLAR)
+      .replace(/^([ \t]*)\$\$[ \t]*(?=\S)(?!.*\$\$)/gm, "$1$$$$\n")
+      .replace(
+        /^(?!.*\$\$.*\$\$)(?![ \t]*\$\$)(.*\S)[ \t]*\$\$[ \t]*$/gm,
+        "$1\n$$$$",
+      )
+  );
 }
 /** Display formulas that use "&" alignment without an environment get an aligned block. */
 function alignDisplayMath() {
@@ -137,7 +145,19 @@ function MermaidDiagram({ code }: { code: string }) {
         const result = await mermaid.render(`mermaid-${++mermaidCount}`, code);
         if (current) setSvg(result.svg);
       })
-      .catch(() => current && setFailed(true));
+      .catch((error) => {
+        // A tab older than the latest build asks for a code file that no longer exists:
+        // reload once to fetch the current build, otherwise show the diagram source.
+        if (
+          String(error).includes("dynamically imported module") &&
+          !sessionStorage.getItem("reloadedForBuild")
+        ) {
+          sessionStorage.setItem("reloadedForBuild", "1");
+          window.location.reload();
+          return;
+        }
+        if (current) setFailed(true);
+      });
     return () => {
       current = false;
     };

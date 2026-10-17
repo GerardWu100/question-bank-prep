@@ -69,3 +69,12 @@ test("a formula indented inside a list keeps the following bullets as a list", (
   expect(html).not.toContain("<pre>");
   expect(html).toContain("<strong>Independence:</strong>");
 });
+
+test("\\[ … \\] and \\( … \\) delimiters from AI replies render as math", () => {
+  const html = render(
+    "For a share: \\[ \\text{V}=\\frac{E}{N} \\] and \\( x^2 \\) inline.",
+  );
+  expect(html).not.toContain("katex-error");
+  expect(html).toContain("katex-display");
+  expect(html.match(/class="katex"/g)).toHaveLength(2);
+});
