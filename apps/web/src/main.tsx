@@ -35,6 +35,12 @@ const EXPLAIN_SECTION_REQUEST =
   "Explain this section in plain language: the key ideas, each formula with every symbol defined, and one short worked example with numbers.";
 /** A bank solution's last line naming its source, e.g. "*Source: Qbank 2025, …*". */
 const SOURCE_LINE = /\n?\s*\*Source:[^\n]*\*\s*$/;
+/** A level-1 heading naming a CFA topic, and how many make a file "one topic per section". */
+const CFA_TOPIC =
+  /^(quantitative methods|economics|financial (statement analysis|reporting)|corporate (finance|issuers)|equity|.*fixed.income|derivatives|alternative investments|portfolio (management|construction)|ethic)/i;
+const MIN_TOPIC_HEADINGS = 5;
+/** A section with at most this many non-empty lines (a bare file title) joins the next. */
+const NEAR_EMPTY_LINES = 3;
 /** Reader sections shorter than this many lines are merged into the previous one. */
 const MIN_SECTION_LINES = 150;
 /** Base font sizes the A−/A+ buttons step through, in px. */
@@ -64,7 +70,7 @@ const savePreference = (key: string, value: unknown) => {
  */
 function splitSections(text: string) {
   const lines = text.split("\n");
-  const starts: { line: number; title: string }[] = [];
+  const starts: { line: number; title: string; level: number }[] = [];
   let inFence = false;
   lines.forEach((line, index) => {
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
@@ -73,10 +79,35 @@ function splitSections(text: string) {
       starts.push({
         line: index,
         title: heading[2].replace(/[#*`$\\]/g, "").trim(),
+        level: heading[1].length,
       });
   });
+  // Whole-curriculum files (reviews, frameworks) have one level-1 heading per CFA
+  // topic: then each topic is one section, and only a near-empty title is merged.
+  const topLevel = starts.filter((start) => start.level === 1);
+  if (
+    topLevel.filter((start) => CFA_TOPIC.test(start.title)).length >=
+    MIN_TOPIC_HEADINGS
+  ) {
+    const sections = topLevel.map((start, k) => ({
+      title: start.title,
+      start: k === 0 ? 0 : start.line,
+      end: topLevel[k + 1]?.line ?? lines.length,
+    }));
+    const isNearEmpty = (section: { start: number; end: number }) =>
+      lines.slice(section.start, section.end).filter((line) => line.trim())
+        .length <= NEAR_EMPTY_LINES;
+    if (sections.length > 1 && isNearEmpty(sections[0])) {
+      sections[1].start = sections[0].start;
+      sections.shift();
+    }
+    return sections.map((section) => ({
+      title: section.title,
+      text: lines.slice(section.start, section.end).join("\n"),
+    }));
+  }
   if (!starts.length || starts[0].line > 0)
-    starts.unshift({ line: 0, title: "Start" });
+    starts.unshift({ line: 0, title: "Start", level: 1 });
   const sections: { title: string; start: number; end: number }[] = [];
   starts.forEach((entry, k) => {
     const end = starts[k + 1]?.line ?? lines.length;
