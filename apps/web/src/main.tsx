@@ -1712,12 +1712,6 @@ function App() {
             <div className="row">
               <h1>Notes</h1>
               <span className="deck-actions">
-                <a
-                  href={`/api${scope}/export/notes?origin=${notesView}`}
-                  download
-                >
-                  Export {notesView === "ai" ? "AI notes" : "my notes"}
-                </a>
                 <button
                   className="secondary"
                   onClick={() => {
@@ -1814,11 +1808,34 @@ function App() {
                   <details className="panel" key={n.id}>
                     <summary>{n.title}</summary>
                     <Markdown text={n.content} />
-                    {n.provenance !== "ai" && (
-                      <button className="quiet" onClick={() => setNoteDraft(n)}>
-                        Edit
+                    <div className="row">
+                      {n.provenance !== "ai" && (
+                        <button
+                          className="quiet"
+                          onClick={() => setNoteDraft(n)}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      <button
+                        className="quiet"
+                        disabled={busy}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Delete "${n.title}"? This cannot be undone.`,
+                            )
+                          )
+                            return;
+                          void run(async () => {
+                            await api(`${scope}/notes/${n.id}`, {}, "DELETE");
+                            setNotes((await api(`${scope}/notes`)).notes);
+                          });
+                        }}
+                      >
+                        Delete
                       </button>
-                    )}
+                    </div>
                   </details>
                 ))
             ) : (
@@ -1878,84 +1895,20 @@ function App() {
         {library && page === "Settings" && (
           <>
             <h1>Settings</h1>
-            {librarySettings && (
-              <section className="panel">
-                <h2>Library</h2>
-                <label>
-                  Choice labels (comma separated)
-                  <input
-                    defaultValue={(
-                      librarySettings.settings?.choiceLabels || []
-                    ).join(", ")}
-                    placeholder="A, B, C"
-                    onBlur={(event) =>
-                      setLibrarySettings({
-                        ...librarySettings,
-                        settings: {
-                          ...librarySettings.settings,
-                          choiceLabels: event.target.value
-                            .split(",")
-                            .map((label) => label.trim())
-                            .filter(Boolean),
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Name
-                  <input
-                    value={librarySettings.name}
-                    onChange={(e) =>
-                      setLibrarySettings({
-                        ...librarySettings,
-                        name: e.target.value,
-                      })
-                    }
-                  />
-                </label>
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(librarySettings.archived)}
-                    onChange={(e) =>
-                      setLibrarySettings({
-                        ...librarySettings,
-                        archived: e.target.checked,
-                      })
-                    }
-                  />
-                  Archive library (read only)
-                </label>
-                <div className="row">
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        const saved = await api(
-                          `${scope}/settings`,
-                          {
-                            operationId: operation(),
-                            expectedVersion: librarySettings.version,
-                            name: librarySettings.name,
-                            archived: librarySettings.archived,
-                            settings: librarySettings.settings,
-                          },
-                          "PATCH",
-                        );
-                        setLibrarySettings(saved);
-                        setLibraries((await api("/libraries")).libraries);
-                      })
-                    }
-                  >
-                    Save library settings
-                  </button>
-                  <a href={`/api${scope}/export/progress`} download>
-                    Export progress (CSV)
-                  </a>
-                </div>
-              </section>
-            )}
+            <section className="panel">
+              <h2>Export</h2>
+              <div className="chips">
+                <a href={`/api${scope}/export/notes?origin=mine`} download>
+                  My notes (Markdown)
+                </a>
+                <a href={`/api${scope}/export/notes?origin=ai`} download>
+                  AI notes (Markdown)
+                </a>
+                <a href={`/api${scope}/export/progress`} download>
+                  Progress (CSV)
+                </a>
+              </div>
+            </section>
             <section className="panel">
               <h2>AI model</h2>
               {settings?.reason && <p className="muted">{settings.reason}</p>}
@@ -2052,17 +2005,6 @@ function App() {
               >
                 Sync folder now
               </button>
-            </section>
-            <section className="panel">
-              <h2>About your study data</h2>
-              <p>
-                Progress uses your latest saved answer for each question. Each
-                practice set keeps its own answers and position.
-              </p>
-              <p>
-                Source edits are checked against the file you opened. If another
-                editor changed it, your draft stays here for reconciliation.
-              </p>
             </section>
           </>
         )}

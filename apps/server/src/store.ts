@@ -254,6 +254,22 @@ export class Store {
     });
     return saved;
   }
+  /**
+   * Delete a note (yours or a saved tutor reply) and its search entry. Its revisions stay,
+   * so a chat that cited it can still open what it cited.
+   */
+  deleteNote(libraryId: string, noteId: string) {
+    this.get(libraryId, noteId, "note");
+    this.db.transaction(() => {
+      this.sql(
+        "DELETE FROM records WHERE id=? AND library_id=? AND kind='note'",
+      ).run(noteId, libraryId);
+      this.sql("DELETE FROM search_index WHERE id=? AND library_id=?").run(
+        noteId,
+        libraryId,
+      );
+    })();
+  }
   /** Mark a file and its questions removed; responses stay as removed-source history. */
   deactivateFile(libraryId: string, file: any, questions?: any[]) {
     this.putIndexed(libraryId, "file", { ...file, active: false });

@@ -540,6 +540,10 @@ export async function buildApp(
       }),
     ),
   );
+  app.delete(base + "/notes/:id", async (request: any) => {
+    store.deleteNote(lib(request), request.params.id);
+    return { deleted: true };
+  });
   app.put(base + "/notes/:id", async (request: any) =>
     store.mutation(request, () => {
       const note = store.get(lib(request), request.params.id, "note");
@@ -653,7 +657,8 @@ export async function buildApp(
   });
   app.get(base + "/export/progress", async (request: any, reply) => {
     // One row per answered question: where it sits, what you chose, and how it went.
-    const cell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const cell = (value: unknown) =>
+      `"${String(value ?? "").replace(/"/g, '""')}"`;
     const rows = store
       .list(lib(request), "question")
       .filter((q) => q.active && q.state.selection)
@@ -675,7 +680,10 @@ export async function buildApp(
       );
     reply
       .type("text/csv; charset=utf-8")
-      .header("content-disposition", 'attachment; filename="study-progress.csv"');
+      .header(
+        "content-disposition",
+        'attachment; filename="study-progress.csv"',
+      );
     return [
       "topic,source,chapter,question,stem,result,your_answer,answer_key,confidence,flagged",
       ...rows,

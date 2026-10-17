@@ -82,6 +82,11 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await page.getByLabel("Note (Markdown)").fill("Check the arithmetic.");
   await page.getByRole("button", { name: "Save note", exact: true }).click();
   await expect(page.getByText("Regression checklist")).toBeVisible();
+  // Deleting asks first; accepting the confirmation removes the note.
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByText("Regression checklist").click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("Regression checklist")).toHaveCount(0);
   await page.goBack();
   await expect(
     page.getByRole("button", { name: "B Four", exact: true }),

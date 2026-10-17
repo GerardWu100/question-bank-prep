@@ -520,3 +520,41 @@ describe("exports", () => {
     }
   });
 });
+
+describe("deleting notes", () => {
+  it("removes a note and its search entry but keeps its revision for old citations", async () => {
+    const { app, store } = await buildApp();
+    try {
+      const library = store.createLibrary("Delete test");
+      store.saveNote(library.id, {
+        id: "n1",
+        title: "Gone",
+        content: "zebra fact",
+        provenance: "ai",
+        version: 1,
+      });
+      const response = await app.inject({
+        method: "DELETE",
+        url: `/api/libraries/${library.id}/notes/n1`,
+        payload: {},
+      });
+      expect(response.json()).toEqual({ deleted: true });
+      expect(store.list(library.id, "note")).toEqual([]);
+      expect(store.search(library.id, "zebra")).toEqual([]);
+      expect(store.get(library.id, "n1:1", "noteRevision")).toMatchObject({
+        title: "Gone",
+      });
+      expect(
+        (
+          await app.inject({
+            method: "DELETE",
+            url: `/api/libraries/${library.id}/notes/n1`,
+            payload: {},
+          })
+        ).statusCode,
+      ).toBe(404);
+    } finally {
+      await app.close();
+    }
+  });
+});
