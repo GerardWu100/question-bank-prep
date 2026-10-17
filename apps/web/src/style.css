@@ -793,6 +793,8 @@ footer {
 }
 .reader-files button {
   display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
   width: 100%;
   text-align: left;
   margin: 0.15rem 0;
@@ -811,6 +813,12 @@ footer {
 }
 .reader-body img {
   max-width: 100%;
+}
+/* Grid items default to their widest content; let the reading column shrink to the
+   window so wide tables and formulas scroll inside it instead of widening the page. */
+.reader-body,
+.reader-files {
+  min-width: 0;
 }
 @media (max-width: 800px) {
   .reader {
