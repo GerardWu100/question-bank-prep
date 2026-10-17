@@ -45,19 +45,38 @@ function tidyInlineHtml() {
   return (tree: any) => visit(tree);
 }
 /**
+ * A "$$" fence pair must share its indentation. When the opening fence is indented deeper
+ * than its closing fence (a list item whose formula was pasted flush left), move the
+ * opening fence out to the closing fence's indent. Matching pairs are left alone, so a
+ * properly indented formula inside a list stays in the list.
+ */
+function alignFenceIndents(text: string) {
+  const lines = text.split("\n");
+  const fence = /^([ \t]*)\$\$[ \t]*$/;
+  for (let open = 0; open < lines.length; open++) {
+    const start = fence.exec(lines[open]);
+    if (!start) continue;
+    let close = open + 1;
+    while (close < lines.length && !fence.test(lines[close])) close++;
+    if (close >= lines.length) break;
+    const end = fence.exec(lines[close])!;
+    if (end[1].length < start[1].length) lines[open] = `${end[1]}$$`;
+    open = close;
+  }
+  return lines.join("\n");
+}
+/**
  * Source text -> parser input. Hides escaped dollars (see above) and repairs common
  * conversion slips around display math, each of which would otherwise swallow the rest
  * of the page into one formula:
- *   - an indented "$$" fence line whose partner is not indented (inside a list);
  *   - text on the same line after an opening or closing "$$" ("$$\\begin{aligned}",
  *     "$$ Actual P/E is…");
  *   - text on the same line before a closing "$$" ("\\end{aligned}$$").
  * Lines holding two "$$" (a one-line display formula) are left alone.
  */
 function prepareMarkdown(text: string) {
-  return text
+  return alignFenceIndents(text)
     .replaceAll("\\$", ESCAPED_DOLLAR)
-    .replace(/^[ \t]+\$\$[ \t]*$/gm, "$$$$")
     .replace(/^([ \t]*)\$\$[ \t]*(?=\S)(?!.*\$\$)/gm, "$1$$$$\n")
     .replace(
       /^(?!.*\$\$.*\$\$)(?![ \t]*\$\$)(.*\S)[ \t]*\$\$[ \t]*$/gm,

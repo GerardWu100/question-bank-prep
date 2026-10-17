@@ -61,3 +61,11 @@ test("text glued to $$ fences and indented fences inside lists still render", ()
   expect(listed).not.toContain("katex-error");
   expect(listed.match(/class="katex"/g)).toHaveLength(2);
 });
+
+test("a formula indented inside a list keeps the following bullets as a list", () => {
+  const html = render(
+    "- **Homoskedasticity:**\n\n  $$\n  E(e^2)=s^2\n  $$\n\n- **Independence:** uncorrelated.",
+  );
+  expect(html).not.toContain("<pre>");
+  expect(html).toContain("<strong>Independence:</strong>");
+});
