@@ -97,8 +97,9 @@ const sumRows = (rows: any[]) =>
       correct: sum.correct + row.correct,
       unsure: sum.unsure + row.unsure,
       wrong: sum.wrong + row.wrong,
+      flagged: sum.flagged + row.flagged,
     }),
-    { total: 0, done: 0, correct: 0, unsure: 0, wrong: 0 },
+    { total: 0, done: 0, correct: 0, unsure: 0, wrong: 0, flagged: 0 },
   );
 /** URL hash for a view, so refresh and the browser Back button keep the place. */
 const hashFor = (page: Page, setId?: string) =>
@@ -478,13 +479,14 @@ function App() {
   const openDeck = async (
     deck: { topic: string; source?: string; chapter?: string },
     total: number,
-    review = false,
+    review: "" | "wrong" | "unsure" | "flagged" = "",
   ) => {
     const filters = {
       topic: deck.topic,
       source: deck.source ?? "",
       chapter: deck.chapter ?? "",
-      statuses: review ? ["wrong", "unsure"] : [],
+      statuses: review === "wrong" || review === "unsure" ? [review] : [],
+      flagged: review === "flagged",
     };
     const existing =
       !review &&
@@ -505,7 +507,8 @@ function App() {
         labelOf(deck.topic),
         deck.source && labelOf(deck.source),
         deck.chapter && chapterLabel(deck.chapter),
-        review && "Mistakes",
+        review &&
+          { wrong: "Mistakes", unsure: "Unsure", flagged: "Flagged" }[review],
       ]
         .filter(Boolean)
         .join(" · "),
@@ -587,7 +590,7 @@ function App() {
     strong = false,
     note = "",
   ) => {
-    const mistakes = summary.wrong + summary.unsure;
+    // Unsure answers are correct; they get their own review instead of counting as mistakes.
     const share = (n: number) => `${(100 * n) / summary.total}%`;
     return (
       <div
@@ -606,7 +609,7 @@ function App() {
         <span className="deck-count">
           {summary.done}/{summary.total}
           {summary.done > 0 &&
-            ` · ${Math.round((100 * summary.correct) / summary.done)}%`}
+            ` · ${Math.round((100 * (summary.correct + summary.unsure)) / summary.done)}%`}
         </span>
         <span className="deck-actions">
           <button
@@ -620,14 +623,24 @@ function App() {
                 ? "Continue"
                 : "Review"}
           </button>
-          {mistakes > 0 && (
-            <button
-              className="quiet"
-              disabled={busy}
-              onClick={() => void run(() => openDeck(deck, mistakes, true))}
-            >
-              Mistakes {mistakes}
-            </button>
+          {(
+            [
+              ["wrong", "Mistakes", summary.wrong],
+              ["unsure", "Unsure", summary.unsure],
+              ["flagged", "Flagged", summary.flagged],
+            ] as const
+          ).map(
+            ([review, label, count]) =>
+              count > 0 && (
+                <button
+                  key={review}
+                  className="quiet"
+                  disabled={busy}
+                  onClick={() => void run(() => openDeck(deck, count, review))}
+                >
+                  {label} {count}
+                </button>
+              ),
           )}
         </span>
       </div>
@@ -1235,6 +1248,18 @@ function App() {
                           Answer: {question.answerKey}
                         </p>
                       )}
+                      {question.answerKey &&
+                        draft &&
+                        draft !== question.answerKey && (
+                          // A slip of the finger should not land in Mistakes.
+                          <button
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => answer(question.answerKey, "sure")}
+                          >
+                            I misclicked · count as correct
+                          </button>
+                        )}
                       <Markdown
                         text={
                           question.solution ||

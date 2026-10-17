@@ -284,8 +284,10 @@ export async function buildApp(
         correct: 0,
         unsure: 0,
         wrong: 0,
+        flagged: 0,
       };
       row.total++;
+      if (q.annotation.flagged) row.flagged++;
       if (q.state.selection) row.done++;
       const status = questionStatus(q);
       if (status in row) row[status]++;

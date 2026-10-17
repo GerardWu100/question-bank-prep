@@ -35,8 +35,14 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await page.getByRole("button", { name: "Submit answer" }).click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await expect(page.getByText("Two pairs make four.")).toBeVisible();
-  await page.getByRole("button", { name: "B Four", exact: true }).click();
+  // A wrong answer from a slip can be corrected in one click.
+  await page
+    .getByRole("button", { name: "I misclicked · count as correct" })
+    .click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "B Four", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("radio", { name: "Unsure", exact: true }).check();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "☆ Flag", exact: true }).click();
