@@ -1,4 +1,5 @@
 import { registerMaterialRoutes } from "./material-routes.js";
+import { registerReadingRoutes } from "./reading-routes.js";
 import dotenv from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,10 +17,7 @@ const host = process.env.STUDY_HOST || "127.0.0.1";
 const port = Number(process.env.STUDY_PORT || "3000");
 if (!Number.isInteger(port) || port < 1 || port > 65535)
   throw new Error("Invalid STUDY_PORT.");
-if (
-  !LOOPBACK_HOSTS.includes(host) &&
-  !process.env.STUDY_PASSWORD
-)
+if (!LOOPBACK_HOSTS.includes(host) && !process.env.STUDY_PASSWORD)
   throw new Error("Set STUDY_PASSWORD before binding beyond loopback.");
 const { app, store } = await buildApp({
   databasePath: resolve(dataDirectory, "study.sqlite"),
@@ -35,6 +33,12 @@ registerMaterialRoutes(
     ? resolve(root, process.env.MATERIAL_ROOT)
     : undefined,
   dataDirectory,
+);
+registerReadingRoutes(
+  app,
+  process.env.READING_ROOT
+    ? resolve(root, process.env.READING_ROOT)
+    : undefined,
 );
 const webDirectory = resolve(root, "apps/web/dist");
 if (existsSync(webDirectory)) {

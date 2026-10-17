@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { api, ApiError, operation } from "./api";
 import { Markdown } from "./Markdown";
@@ -20,6 +26,66 @@ const RUN_POLL_MS = 500;
 /** "01-quantitative-methods" -> "01 Quantitative Methods"; "qbank-2025" -> "Qbank 2025". */
 const labelOf = (slug: string) =>
   slug.replace(/-/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+/** Reader sections shorter than this many lines are merged into the previous one. */
+const MIN_SECTION_LINES = 150;
+/** Base font sizes the A−/A+ buttons step through, in px. */
+const FONT_SIZES = [14, 15, 17, 19, 21, 24];
+const DEFAULT_FONT_SIZE = 17;
+const THEMES = ["system", "light", "dark"] as const;
+/** Per-viewer display settings; storage may be unavailable (private window). */
+const loadPreference = <T,>(key: string, fallback: T): T => {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : (JSON.parse(value) as T);
+  } catch {
+    return fallback;
+  }
+};
+const savePreference = (key: string, value: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Display settings simply reset next visit.
+  }
+};
+/**
+ * Split long Markdown into sections at # and ## headings (outside code fences), merging
+ * short ones, so a 90,000-line file renders one readable piece at a time.
+ * Returns [{ title, text }] in file order.
+ */
+function splitSections(text: string) {
+  const lines = text.split("\n");
+  const starts: { line: number; title: string }[] = [];
+  let inFence = false;
+  lines.forEach((line, index) => {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const heading = !inFence && /^(#{1,2})\s+(.*)/.exec(line);
+    if (heading)
+      starts.push({
+        line: index,
+        title: heading[2].replace(/[#*`$\\]/g, "").trim(),
+      });
+  });
+  if (!starts.length || starts[0].line > 0)
+    starts.unshift({ line: 0, title: "Start" });
+  const sections: { title: string; start: number; end: number }[] = [];
+  starts.forEach((entry, k) => {
+    const end = starts[k + 1]?.line ?? lines.length;
+    const last = sections[sections.length - 1];
+    if (last && last.end - last.start < MIN_SECTION_LINES) last.end = end;
+    else sections.push({ title: entry.title, start: entry.line, end });
+  });
+  return sections.map((section) => ({
+    title: section.title,
+    text: lines.slice(section.start, section.end).join("\n"),
+  }));
+}
+/** "Kaplan/schwesernotes-equity/notes.md" -> "schwesernotes-equity"; else the file name. */
+const readingLabel = (path: string) => {
+  const parts = path.split("/");
+  const name = parts[parts.length - 1].replace(/\.md$/i, "");
+  return name === "notes" && parts.length > 1 ? parts[parts.length - 2] : name;
+};
 /** "Chapter LM01 Basics…" -> "LM01 Basics…". */
 const chapterLabel = (chapter: string) => chapter.replace(/^Chapter\s+/i, "");
 /** Sum catalog rows (topic/source/chapter progress) into one deck summary. */
@@ -92,7 +158,45 @@ function App() {
       Record<string, string | null>
     >({}),
     [caseOpen, setCaseOpen] = useState(true),
-    [materialRoot, setMaterialRoot] = useState(false);
+    [materialRoot, setMaterialRoot] = useState(false),
+    [readingFiles, setReadingFiles] = useState<string[] | null>([]),
+    [readingPath, setReadingPath] = useState(""),
+    [readingText, setReadingText] = useState(""),
+    [readingSection, setReadingSection] = useState(0),
+    [fontSize, setFontSize] = useState(() =>
+      loadPreference("fontSize", DEFAULT_FONT_SIZE),
+    ),
+    [theme, setTheme] = useState<(typeof THEMES)[number]>(() =>
+      loadPreference("theme", "system"),
+    );
+  // Apply display settings to the whole page and remember them for this browser.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
+    savePreference("fontSize", fontSize);
+  }, [fontSize]);
+  useEffect(() => {
+    if (theme === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+    savePreference("theme", theme);
+  }, [theme]);
+  const sections = useMemo(() => splitSections(readingText), [readingText]);
+  /** Open a reading file (read-only) at a section and remember the place. */
+  const openReading = async (path: string, section = 0) => {
+    const response = await fetch(
+      `/api/reading/file?path=${encodeURIComponent(path)}`,
+      { credentials: "same-origin" },
+    );
+    if (!response.ok) throw new Error(`Could not open ${path}.`);
+    setReadingText(await response.text());
+    setReadingPath(path);
+    setReadingSection(section);
+    savePreference("reading", { path, section });
+  };
+  const showSection = (section: number) => {
+    setReadingSection(section);
+    savePreference("reading", { path: readingPath, section });
+    window.scrollTo({ top: 0 });
+  };
   const latestQuestion = useRef<any>(null),
     queue = useRef(Promise.resolve()),
     routeReady = useRef(false),
@@ -175,6 +279,21 @@ function App() {
     if (!library) return;
     void run(async () => {
       if (page === "Notes") setNotes((await api(`${scope}/notes`)).notes);
+      if (page === "Materials") {
+        const reading = await api("/reading");
+        setReadingFiles(reading.configured ? reading.files : null);
+        const last = loadPreference<{ path: string; section: number } | null>(
+          "reading",
+          null,
+        );
+        if (
+          reading.configured &&
+          last &&
+          !readingPath &&
+          reading.files.includes(last.path)
+        )
+          await openReading(last.path, last.section);
+      }
       if (page === "History") setChats((await api(`${scope}/chats`)).chats);
       if (page === "Settings" || page === "Ask AI" || page === "Practice")
         await Promise.all([
@@ -435,21 +554,25 @@ function App() {
     source,
     chapter,
   ]);
-  // catalog rows -> [topic, [source, rows sorted by chapter][]][]
+  // Practice is by topic and chapter; sources are merged and only listed.
+  // catalog rows (one per topic/source/chapter) -> [topic, [chapter, rows of each source][]][]
   const deckGroups: [string, [string, any[]][]][] = [];
   for (const row of overview.catalog ?? []) {
     let topicEntry = deckGroups.find(([t]) => t === row.topic);
     if (!topicEntry) deckGroups.push((topicEntry = [row.topic, []]));
-    let sourceEntry = topicEntry[1].find(([src]) => src === row.source);
-    if (!sourceEntry) topicEntry[1].push((sourceEntry = [row.source, []]));
-    sourceEntry[1].push(row);
+    let chapterEntry = topicEntry[1].find(([c]) => c === row.chapter);
+    if (!chapterEntry) topicEntry[1].push((chapterEntry = [row.chapter, []]));
+    chapterEntry[1].push(row);
   }
+  for (const [, chapters] of deckGroups)
+    chapters.sort(([a], [b]) => a.localeCompare(b));
   /** One progress line with Start/Continue and, when there are any, Mistakes. */
   const deckRow = (
     label: string,
     summary: ReturnType<typeof sumRows>,
     deck: { topic: string; source?: string; chapter?: string },
     strong = false,
+    note = "",
   ) => {
     const mistakes = summary.wrong + summary.unsure;
     const share = (n: number) => `${(100 * n) / summary.total}%`;
@@ -458,7 +581,10 @@ function App() {
         className={`deck-row${strong ? " strong" : ""}`}
         key={`${deck.source}:${deck.chapter ?? ""}`}
       >
-        <span className="deck-label">{label}</span>
+        <span className="deck-label">
+          {label}
+          {note && <small className="muted">{note}</small>}
+        </span>
         <span className="deck-bar" aria-hidden="true">
           <span className="correct" style={{ width: share(summary.correct) }} />
           <span className="unsure" style={{ width: share(summary.unsure) }} />
@@ -666,6 +792,48 @@ function App() {
         >
           ▦ <span>Study Ledger</span>
         </a>
+        <div className="header-tools">
+          <button
+            className="quiet"
+            aria-label="Smaller text"
+            disabled={fontSize <= FONT_SIZES[0]}
+            onClick={() =>
+              setFontSize(
+                [...FONT_SIZES].reverse().find((size) => size < fontSize) ??
+                  FONT_SIZES[0],
+              )
+            }
+          >
+            A−
+          </button>
+          <button
+            className="quiet"
+            aria-label="Larger text"
+            disabled={fontSize >= FONT_SIZES[FONT_SIZES.length - 1]}
+            onClick={() =>
+              setFontSize(
+                FONT_SIZES.find((size) => size > fontSize) ??
+                  FONT_SIZES[FONT_SIZES.length - 1],
+              )
+            }
+          >
+            A+
+          </button>
+          <button
+            className="quiet"
+            aria-label={`Theme: ${theme}`}
+            title="Switch theme: system, light, dark"
+            onClick={() =>
+              setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length])
+            }
+          >
+            {theme === "dark"
+              ? "☾ Dark"
+              : theme === "light"
+                ? "☀ Light"
+                : "◐ Auto"}
+          </button>
+        </div>
         {libraries.length > 1 && (
           <select
             aria-label="Library"
@@ -685,17 +853,15 @@ function App() {
         )}
       </header>
       <nav aria-label="Main navigation">
-        {pages
-          .filter((p) => p !== "Materials" || !materialRoot)
-          .map((p) => (
-            <button
-              className={page === p ? "active" : ""}
-              key={p}
-              onClick={() => setPage(p)}
-            >
-              {p}
-            </button>
-          ))}
+        {pages.map((p) => (
+          <button
+            className={page === p ? "active" : ""}
+            key={p}
+            onClick={() => setPage(p)}
+          >
+            {p}
+          </button>
+        ))}
       </nav>
       <main>
         {error && (
@@ -766,29 +932,24 @@ function App() {
                 ),
               )}
             </div>
-            {deckGroups.map(([deckTopic, sources]) => (
+            {deckGroups.map(([deckTopic, chapters]) => (
               <section className="panel deck" key={deckTopic}>
                 <h2>{labelOf(deckTopic) || "Questions"}</h2>
-                {sources.map(([deckSource, rows]) => (
-                  <div className="deck-source" key={deckSource}>
-                    {deckRow(
-                      labelOf(deckSource),
-                      sumRows(rows),
-                      {
-                        topic: deckTopic,
-                        source: deckSource,
-                      },
-                      true,
-                    )}
-                    {rows.map((row) =>
-                      deckRow(chapterLabel(row.chapter) || "No chapter", row, {
-                        topic: deckTopic,
-                        source: deckSource,
-                        chapter: row.chapter,
-                      }),
-                    )}
-                  </div>
-                ))}
+                {deckRow(
+                  "All chapters",
+                  sumRows(chapters.flatMap(([, rows]) => rows)),
+                  { topic: deckTopic },
+                  true,
+                )}
+                {chapters.map(([deckChapter, rows]) =>
+                  deckRow(
+                    chapterLabel(deckChapter) || "No chapter",
+                    sumRows(rows),
+                    { topic: deckTopic, chapter: deckChapter },
+                    false,
+                    rows.map((row: any) => labelOf(row.source)).join(" · "),
+                  ),
+                )}
               </section>
             ))}
             {!overview.counts.total && (
@@ -1041,13 +1202,14 @@ function App() {
                           </p>
                         )}
                       {question.answerKey && (
-                        <p>
+                        <p
+                          title={
+                            question.answerByAI
+                              ? "AI-written answer, not from the source"
+                              : undefined
+                          }
+                        >
                           Answer: {question.answerKey}
-                          {question.answerByAI && (
-                            <span className="ai-badge">
-                              AI-written answer · not from the source
-                            </span>
-                          )}
                         </p>
                       )}
                       <Markdown
@@ -1085,147 +1247,244 @@ function App() {
         {library && page === "Materials" && (
           <>
             <h1>Materials</h1>
-            <section className="panel">
-              <h2>Import Markdown</h2>
-              <label>
-                Choose a file
-                <input
-                  type="file"
-                  accept=".md,.markdown,text/markdown"
-                  onChange={(e) =>
-                    void run(async () => {
-                      const selected = e.target.files?.[0];
-                      if (selected) {
-                        setImportPath(selected.name);
-                        setImportContent(await selected.text());
-                        showImportPreview(null);
-                      }
-                    })
-                  }
-                />
-              </label>
-              <label>
-                File name
-                <input
-                  value={importPath}
-                  onChange={(e) => {
-                    setImportPath(e.target.value);
-                    showImportPreview(null);
-                  }}
-                />
-              </label>
-              <label>
-                Markdown source
-                <textarea
-                  rows={10}
-                  value={importContent}
-                  onChange={(e) => {
-                    setImportContent(e.target.value);
-                    showImportPreview(null);
-                  }}
-                  placeholder="Paste your question-bank Markdown"
-                />
-              </label>
-              <button
-                disabled={busy || !importContent.trim()}
-                onClick={() =>
-                  void run(async () =>
-                    showImportPreview(
-                      await api(`${scope}/imports/preview`, {
-                        files: [
-                          {
-                            path: importPath,
-                            content: importContent,
-                            type: "questions",
-                          },
-                        ],
-                      }),
-                    ),
-                  )
-                }
-              >
-                Preview import
-              </button>
-              {importPreview && (
-                <div className="import-result">
-                  <h3>
-                    {importPreview.counts?.questions || 0} questions found
-                  </h3>
-                  {importPreview.issues?.map((issue: any, index: number) => (
-                    <p
-                      key={index}
-                      className={issue.severity === "error" ? "error" : "muted"}
-                    >
-                      {issue.path}:{issue.line} · {issue.message}
-                    </p>
-                  ))}
-                  {importPreview.identityProposals
-                    ?.filter(
-                      (proposal: any) =>
-                        !proposal.automatic && proposal.candidates.length > 0,
-                    )
-                    .map((proposal: any) => (
-                      <label key={proposal.key}>
-                        {proposal.title}: keep progress from an existing
-                        question?
-                        <select
-                          value={
-                            identityMappings[proposal.key] === null
-                              ? "new"
-                              : identityMappings[proposal.key] || ""
-                          }
-                          onChange={(event) => {
-                            const { [proposal.key]: _previous, ...rest } =
-                              identityMappings;
-                            setIdentityMappings(
-                              event.target.value === ""
-                                ? rest
-                                : {
-                                    ...rest,
-                                    [proposal.key]:
-                                      event.target.value === "new"
-                                        ? null
-                                        : event.target.value,
-                                  },
-                            );
-                          }}
-                        >
-                          <option value="">Automatic: new question</option>
-                          <option value="new">Create a new question</option>
-                          {proposal.candidates.map((candidate: any) => (
-                            <option
-                              key={candidate.id}
-                              value={candidate.id}
-                              disabled={!candidate.choicesCompatible}
+            {readingFiles === null ? (
+              <p className="muted">
+                Set READING_ROOT in .env to a folder of Markdown study material
+                to read it here.
+              </p>
+            ) : (
+              <div className="reader">
+                <aside className="reader-files">
+                  {[...new Set(readingFiles.map((f) => f.split("/")[0]))].map(
+                    (group) => (
+                      <details
+                        key={group}
+                        open={readingPath.startsWith(`${group}/`)}
+                      >
+                        <summary>{group}</summary>
+                        {readingFiles
+                          .filter((f) => f.startsWith(`${group}/`))
+                          .map((f) => (
+                            <button
+                              key={f}
+                              className={
+                                f === readingPath ? "selected" : "quiet"
+                              }
+                              onClick={() => void run(() => openReading(f))}
                             >
-                              {candidate.title}
-                              {!candidate.choicesCompatible
-                                ? " · choices changed"
-                                : ""}
+                              {readingLabel(f)}
+                            </button>
+                          ))}
+                      </details>
+                    ),
+                  )}
+                </aside>
+                <article className="panel reader-body">
+                  {readingPath ? (
+                    <>
+                      <div className="reader-nav">
+                        <button
+                          className="secondary"
+                          disabled={readingSection === 0}
+                          onClick={() => showSection(readingSection - 1)}
+                        >
+                          ←
+                        </button>
+                        <select
+                          aria-label="Section"
+                          value={readingSection}
+                          onChange={(e) => showSection(Number(e.target.value))}
+                        >
+                          {sections.map((section, index) => (
+                            <option key={index} value={index}>
+                              {index + 1}/{sections.length} · {section.title}
                             </option>
                           ))}
                         </select>
-                      </label>
-                    ))}
-                  <button
-                    disabled={busy || !importPreview.canCommit}
-                    onClick={() =>
+                        <button
+                          className="secondary"
+                          disabled={readingSection >= sections.length - 1}
+                          onClick={() => showSection(readingSection + 1)}
+                        >
+                          →
+                        </button>
+                      </div>
+                      <Markdown
+                        text={sections[readingSection]?.text ?? ""}
+                        readingDirectory={readingPath
+                          .split("/")
+                          .slice(0, -1)
+                          .join("/")}
+                      />
+                      <div className="reader-nav">
+                        <button
+                          className="secondary"
+                          disabled={readingSection === 0}
+                          onClick={() => showSection(readingSection - 1)}
+                        >
+                          ← Previous
+                        </button>
+                        <button
+                          disabled={readingSection >= sections.length - 1}
+                          onClick={() => showSection(readingSection + 1)}
+                        >
+                          Next section →
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="muted">
+                      Choose a file to read. Files are read-only.
+                    </p>
+                  )}
+                </article>
+              </div>
+            )}
+            {!materialRoot && (
+              <section className="panel">
+                <h2>Import Markdown</h2>
+                <label>
+                  Choose a file
+                  <input
+                    type="file"
+                    accept=".md,.markdown,text/markdown"
+                    onChange={(e) =>
                       void run(async () => {
-                        await api(
-                          `${scope}/imports/${importPreview.id}/${importPreview.localRoot ? "root-commit" : "commit"}`,
-                          { acceptWarnings: true, identityMappings },
-                        );
-                        showImportPreview(null);
-                        setImportContent("");
-                        await refresh();
+                        const selected = e.target.files?.[0];
+                        if (selected) {
+                          setImportPath(selected.name);
+                          setImportContent(await selected.text());
+                          showImportPreview(null);
+                        }
                       })
                     }
-                  >
-                    Confirm import
-                  </button>
-                </div>
-              )}
-            </section>
+                  />
+                </label>
+                <label>
+                  File name
+                  <input
+                    value={importPath}
+                    onChange={(e) => {
+                      setImportPath(e.target.value);
+                      showImportPreview(null);
+                    }}
+                  />
+                </label>
+                <label>
+                  Markdown source
+                  <textarea
+                    rows={10}
+                    value={importContent}
+                    onChange={(e) => {
+                      setImportContent(e.target.value);
+                      showImportPreview(null);
+                    }}
+                    placeholder="Paste your question-bank Markdown"
+                  />
+                </label>
+                <button
+                  disabled={busy || !importContent.trim()}
+                  onClick={() =>
+                    void run(async () =>
+                      showImportPreview(
+                        await api(`${scope}/imports/preview`, {
+                          files: [
+                            {
+                              path: importPath,
+                              content: importContent,
+                              type: "questions",
+                            },
+                          ],
+                        }),
+                      ),
+                    )
+                  }
+                >
+                  Preview import
+                </button>
+                {importPreview && (
+                  <div className="import-result">
+                    <h3>
+                      {importPreview.counts?.questions || 0} questions found
+                    </h3>
+                    {importPreview.issues?.map((issue: any, index: number) => (
+                      <p
+                        key={index}
+                        className={
+                          issue.severity === "error" ? "error" : "muted"
+                        }
+                      >
+                        {issue.path}:{issue.line} · {issue.message}
+                      </p>
+                    ))}
+                    {importPreview.identityProposals
+                      ?.filter(
+                        (proposal: any) =>
+                          !proposal.automatic && proposal.candidates.length > 0,
+                      )
+                      .map((proposal: any) => (
+                        <label key={proposal.key}>
+                          {proposal.title}: keep progress from an existing
+                          question?
+                          <select
+                            value={
+                              identityMappings[proposal.key] === null
+                                ? "new"
+                                : identityMappings[proposal.key] || ""
+                            }
+                            onChange={(event) => {
+                              const { [proposal.key]: _previous, ...rest } =
+                                identityMappings;
+                              setIdentityMappings(
+                                event.target.value === ""
+                                  ? rest
+                                  : {
+                                      ...rest,
+                                      [proposal.key]:
+                                        event.target.value === "new"
+                                          ? null
+                                          : event.target.value,
+                                    },
+                              );
+                            }}
+                          >
+                            <option value="">Automatic: new question</option>
+                            <option value="new">Create a new question</option>
+                            {proposal.candidates.map((candidate: any) => (
+                              <option
+                                key={candidate.id}
+                                value={candidate.id}
+                                disabled={!candidate.choicesCompatible}
+                              >
+                                {candidate.title}
+                                {!candidate.choicesCompatible
+                                  ? " · choices changed"
+                                  : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    <button
+                      disabled={busy || !importPreview.canCommit}
+                      onClick={() =>
+                        void run(async () => {
+                          await api(
+                            `${scope}/imports/${importPreview.id}/${importPreview.localRoot ? "root-commit" : "commit"}`,
+                            { acceptWarnings: true, identityMappings },
+                          );
+                          showImportPreview(null);
+                          setImportContent("");
+                          await refresh();
+                        })
+                      }
+                    >
+                      Confirm import
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
         {library && page === "Notes" && (

@@ -8,8 +8,8 @@ Use the cfa-question-review skill on question_bank/<NN-topic>/ (or the whole que
 
 Result:
 
-- Duplicate questions (including the same question with different numbers or names) are removed, keeping the best copy; every removal is logged with the copy that was kept.
-- Questions the source left without a key get an `Answer (AI)` key and a solution that opens with "AI-written answer and explanation, not from the source". The app shows these with an "AI-written answer · not from the source" label.
+- Duplicate questions (including the same question with different numbers or names) are removed across sources within a topic, keeping any one copy; every removal is logged with the copy that was kept.
+- Questions the source left without a key get an `Answer (AI)` key and a worked solution with the reference used. The `(AI)` marker stays in the file and the app's data but is not shown while you practise (hover the Answer line to see it).
 - Questions the AI could not solve reliably stay without a key and are listed as unresolved.
 - Source keys are never changed; suspected source errors are flagged in the solution.
 

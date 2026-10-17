@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -23,10 +23,11 @@ function restoreEscapedDollars() {
 }
 const remarkPlugins = [remarkGfm, remarkMath, restoreEscapedDollars];
 const rehypePlugins = [rehypeKatex];
+const imagePlaceholder = (alt?: string) => (
+  <span className="muted">[Image: {alt || "external image not loaded"}]</span>
+);
 const components: Components = {
-  img: ({ alt }) => (
-    <span className="muted">[Image: {alt || "external image not loaded"}]</span>
-  ),
+  img: ({ alt }) => imagePlaceholder(alt),
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noopener noreferrer">
       {children}
@@ -39,15 +40,52 @@ const components: Components = {
   ),
 };
 
+/** "a/b/../c/./d.png" -> "a/c/d.png" (paths inside the reading folder). */
+function joinReadingPath(directory: string, src: string) {
+  const parts: string[] = [];
+  for (const part of `${directory}/${src}`.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return parts.join("/");
+}
+
 /** Shared safe renderer for materials, questions, solutions, notes, and chat.
- * Memoized: typing elsewhere in the app must not re-run Markdown and KaTeX parsing. */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+ * Memoized: typing elsewhere in the app must not re-run Markdown and KaTeX parsing.
+ * `readingDirectory` (a folder inside READING_ROOT) lets relative images load from the
+ * read-only reading route; everywhere else images stay as placeholders. */
+export const Markdown = memo(function Markdown({
+  text,
+  readingDirectory,
+}: {
+  text: string;
+  readingDirectory?: string;
+}) {
+  const rendered = useMemo<Components>(
+    () =>
+      readingDirectory === undefined
+        ? components
+        : {
+            ...components,
+            img: ({ src, alt }) =>
+              typeof src === "string" && !/^[a-z]+:/i.test(src) ? (
+                <img
+                  src={`/api/reading/file?path=${encodeURIComponent(joinReadingPath(readingDirectory, decodeURI(src)))}`}
+                  alt={alt || ""}
+                />
+              ) : (
+                imagePlaceholder(alt)
+              ),
+          },
+    [readingDirectory],
+  );
   return (
     <div className="markdown">
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
-        components={components}
+        components={rendered}
       >
         {text.replaceAll("\\$", ESCAPED_DOLLAR)}
       </ReactMarkdown>
