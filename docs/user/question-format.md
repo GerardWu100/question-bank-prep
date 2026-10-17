@@ -138,4 +138,4 @@ The same parser runs without the app. It prints counts per file and every import
 npm run check-bank -- path/to/bank.md path/to/folder
 ```
 
-When `MATERIAL_ROOT` is set, every `.md` file in that folder and its subfolders is imported as a question bank, so keep notes and README files outside it.
+When `MATERIAL_ROOT` is set, the app syncs that folder each time a library opens, and every `.md` file in it and its subfolders is imported as a question bank, so keep notes and README files outside it.

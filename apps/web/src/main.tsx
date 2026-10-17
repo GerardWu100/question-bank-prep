@@ -15,7 +15,7 @@ const pages = [
   "Settings",
 ] as const;
 type Page = (typeof pages)[number];
-const DEFAULT_MODEL = "gpt-6-luna";
+const DEFAULT_MODEL = "gpt-6.1-sol";
 /** Wait after the last filter change before asking the server for a count. */
 const COUNT_DEBOUNCE_MS = 200;
 const RUN_POLL_MS = 500;
@@ -70,17 +70,18 @@ function App() {
     [identityMappings, setIdentityMappings] = useState<
       Record<string, string | null>
     >({}),
-    [caseOpen, setCaseOpen] = useState(true);
+    [caseOpen, setCaseOpen] = useState(true),
+    [materialRoot, setMaterialRoot] = useState(false);
   const latestQuestion = useRef<any>(null),
     queue = useRef(Promise.resolve()),
     intent = useRef(0);
   const scope = `/libraries/${library}`;
   const position = activeSet?.cursor ?? 0;
+  // A question chat follows the set being practised; other chats keep their saved set.
   const chatSetId = (current: any) =>
-    current.setId ||
-    (current.kind === "question" && current.questionId === question?.id
-      ? activeSet?.id
-      : undefined);
+    current.questionId && current.questionId === question?.id && activeSet
+      ? activeSet.id
+      : current.setId || undefined;
   const chatUrl = (current: any) =>
     `${scope}/chats/${current.id}${chatSetId(current) ? `?setId=${encodeURIComponent(chatSetId(current))}` : ""}`;
   const run = useCallback(async (action: () => Promise<void>) => {
@@ -97,6 +98,15 @@ function App() {
   }, []);
   const refresh = async () => {
     if (library) setOverview(await api(`${scope}/overview`));
+  };
+  /** Pull the configured folder into the library; errors block only that sync. */
+  const syncMaterialRoot = async () => {
+    const result = await api(`${scope}/imports/root-sync`, {});
+    const errors = result.issues.filter((i: any) => i.severity === "error");
+    if (errors.length)
+      setError(
+        `Folder not synced: ${errors.map((i: any) => `${i.path}:${i.line} ${i.message}`).join("; ")}`,
+      );
   };
   const loadLibraries = async () => {
     const data = await api("/libraries");
@@ -120,7 +130,13 @@ function App() {
     });
   }, []);
   useEffect(() => {
-    if (library) void run(refresh);
+    if (!library) return;
+    void run(async () => {
+      const { configured } = await api("/material-root");
+      setMaterialRoot(configured);
+      if (configured) await syncMaterialRoot();
+      await refresh();
+    });
   }, [library]);
   useEffect(() => {
     if (!library) return;
@@ -132,7 +148,7 @@ function App() {
         ]);
       if (page === "Progress") await loadFocus();
       if (page === "History") setChats((await api(`${scope}/chats`)).chats);
-      if (page === "Settings" || page === "Ask AI")
+      if (page === "Settings" || page === "Ask AI" || page === "Practice")
         await Promise.all([
           api("/models").then(setSettings),
           page === "Settings" &&
@@ -150,6 +166,17 @@ function App() {
     setConfidence(q.setState.confidence || "sure");
     setNote(q.annotation.note);
     setSaveStatus("");
+    // Reopen this question's saved tutor conversation, if any, below the question.
+    const prior = (await api(`${scope}/chats`)).chats.find(
+      (c: any) => c.questionId === q.id,
+    );
+    setChat(
+      prior
+        ? await api(
+            `${scope}/chats/${prior.id}?setId=${encodeURIComponent(set.id)}`,
+          )
+        : null,
+    );
   };
   const openSet = async (id: string) => {
     const set = await api(`${scope}/sets/${id}`);
@@ -302,6 +329,165 @@ function App() {
         await saveMaterial(true);
     }
   };
+  const tutorConversation = (
+    <>
+      {chat?.messages?.map((m: any) => (
+        <article key={m.id} className={`message ${m.role}`}>
+          <span className="eyebrow">
+            {m.role === "assistant"
+              ? "TUTOR"
+              : m.role === "user"
+                ? "YOU"
+                : m.role}
+          </span>
+          <Markdown text={m.content || ""} />
+          {m.sources?.length > 0 && (
+            <div className="chips">
+              {m.sources.map((source: any) => (
+                <button
+                  className="secondary"
+                  key={source.id}
+                  onClick={() =>
+                    void run(async () =>
+                      setCitation(
+                        await api(
+                          `${scope}/chats/${chat.id}/messages/${m.id}/sources/${source.id}`,
+                        ),
+                      ),
+                    )
+                  }
+                >
+                  {source.title || source.id}
+                </button>
+              ))}
+            </div>
+          )}
+          {m.role === "assistant" && (
+            <button
+              className="quiet"
+              onClick={() =>
+                void run(async () => {
+                  await api(
+                    `${scope}/chats/${chat.id}/messages/${m.id}/save-note`,
+                    {
+                      title: chat.title,
+                      operationId: operation(),
+                    },
+                  );
+                  setSaveStatus("AI note saved");
+                })
+              }
+            >
+              Save as AI note
+            </button>
+          )}
+        </article>
+      ))}
+      <form
+        className="composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(async () => {
+            let current = chat;
+            // Under a practice question the conversation belongs to that question.
+            if (!current)
+              current = await api(
+                `${scope}/chats`,
+                page === "Practice" && question
+                  ? {
+                      title: question.title,
+                      kind: "question",
+                      setId: activeSet.id,
+                      questionId: question.id,
+                    }
+                  : { title: prompt.slice(0, 60), kind: "ask" },
+              );
+            setChat(current);
+            const text = prompt;
+            setPrompt("");
+            try {
+              const result = await api(
+                `${scope}/chats/${current.id}/messages`,
+                {
+                  text,
+                  model,
+                  stream: true,
+                  ...(chatSetId(current) ? { setId: chatSetId(current) } : {}),
+                  operationId: operation(),
+                },
+              );
+              if (result.run?.id) {
+                setActiveRun(result.run.id);
+                let state = result.run;
+                while (state.status === "running") {
+                  await new Promise((resolve) =>
+                    setTimeout(resolve, RUN_POLL_MS),
+                  );
+                  state = await api(`${scope}/runs/${result.run.id}`);
+                  setChat(await api(chatUrl(current)));
+                }
+                if (state.error)
+                  setError(
+                    typeof state.error === "string"
+                      ? state.error
+                      : state.error.message,
+                  );
+              }
+            } finally {
+              setActiveRun(null);
+              setChat(await api(chatUrl(current)));
+            }
+          });
+        }}
+      >
+        <label htmlFor="tutor-prompt">Your question</label>
+        <label>
+          Model
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            {(settings?.models || [{ id: DEFAULT_MODEL, enabled: true }]).map(
+              (entry: any) => (
+                <option
+                  key={entry.id}
+                  disabled={!entry.enabled}
+                  value={entry.id}
+                >
+                  {entry.id}
+                  {!entry.enabled ? " · unavailable" : ""}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+        <textarea
+          id="tutor-prompt"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={3}
+          placeholder="What would you like to understand?"
+        />
+        <div className="row">
+          {/* The practice page already shows the save status above; avoid a second copy. */}
+          <span role="status" className="muted">
+            {busy ? "Working…" : page === "Practice" ? "" : saveStatus}
+          </span>
+          <button disabled={busy || !prompt.trim()}>Send</button>
+          {activeRun && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() =>
+                void api(`${scope}/runs/${activeRun}/cancel`, {}).catch((e) =>
+                  setError(e.message),
+                )
+              }
+            >
+              Stop
+            </button>
+          )}
+        </div>
+      </form>
+    </>
+  );
   return (
     <>
       <header>
@@ -315,21 +501,23 @@ function App() {
         >
           ▦ <span>Study Ledger</span>
         </a>
-        <select
-          aria-label="Library"
-          value={library}
-          onChange={(e) => {
-            setLibrary(e.target.value);
-            setQuestion(null);
-            setActiveSet(null);
-          }}
-        >
-          {libraries.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
+        {libraries.length > 1 && (
+          <select
+            aria-label="Library"
+            value={library}
+            onChange={(e) => {
+              setLibrary(e.target.value);
+              setQuestion(null);
+              setActiveSet(null);
+            }}
+          >
+            {libraries.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        )}
       </header>
       <nav aria-label="Main navigation">
         {pages.map((p) => (
@@ -670,24 +858,10 @@ function App() {
                 Next →
               </button>
             </div>
-            <button
-              className="quiet"
-              onClick={() =>
-                void run(async () => {
-                  setChat(
-                    await api(`${scope}/chats`, {
-                      title: question.title,
-                      kind: "question",
-                      setId: activeSet.id,
-                      questionId: question.id,
-                    }),
-                  );
-                  setPage("Ask AI");
-                })
-              }
-            >
-              Ask the tutor about this question →
-            </button>
+            <section className="panel tutor-inline">
+              <h2>Ask AI</h2>
+              {tutorConversation}
+            </section>
           </>
         )}
         {library && page === "Progress" && (
@@ -859,154 +1033,159 @@ function App() {
                     <span>Edit →</span>
                   </button>
                 ))}
-                <section className="panel">
-                  <h2>Import Markdown</h2>
-                  <label>
-                    Choose a file
-                    <input
-                      type="file"
-                      accept=".md,.markdown,text/markdown"
-                      onChange={(e) =>
-                        void run(async () => {
-                          const selected = e.target.files?.[0];
-                          if (selected) {
-                            setImportPath(selected.name);
-                            setImportContent(await selected.text());
-                            showImportPreview(null);
-                          }
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    File name
-                    <input
-                      value={importPath}
-                      onChange={(e) => {
-                        setImportPath(e.target.value);
-                        showImportPreview(null);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    Markdown source
-                    <textarea
-                      rows={10}
-                      value={importContent}
-                      onChange={(e) => {
-                        setImportContent(e.target.value);
-                        showImportPreview(null);
-                      }}
-                      placeholder="Paste your question-bank Markdown"
-                    />
-                  </label>
-                  <button
-                    disabled={busy || !importContent.trim()}
-                    onClick={() =>
-                      void run(async () =>
-                        showImportPreview(
-                          await api(`${scope}/imports/preview`, {
-                            files: [
-                              {
-                                path: importPath,
-                                content: importContent,
-                                type: "questions",
-                              },
-                            ],
-                          }),
-                        ),
-                      )
-                    }
-                  >
-                    Preview import
-                  </button>
-                  {importPreview && (
-                    <div className="import-result">
-                      <h3>
-                        {importPreview.counts?.questions || 0} questions found
-                      </h3>
-                      {importPreview.issues?.map(
-                        (issue: any, index: number) => (
-                          <p
-                            key={index}
-                            className={
-                              issue.severity === "error" ? "error" : "muted"
-                            }
-                          >
-                            {issue.path}:{issue.line} · {issue.message}
-                          </p>
-                        ),
-                      )}
-                      {importPreview.identityProposals
-                        ?.filter(
-                          (proposal: any) =>
-                            !proposal.automatic && proposal.candidates.length > 0,
-                        )
-                        .map((proposal: any) => (
-                          <label key={proposal.key}>
-                            {proposal.title}: keep progress from an existing
-                            question?
-                            <select
-                              value={
-                                identityMappings[proposal.key] === null
-                                  ? "new"
-                                  : identityMappings[proposal.key] || ""
-                              }
-                              onChange={(event) => {
-                                const { [proposal.key]: _previous, ...rest } =
-                                  identityMappings;
-                                setIdentityMappings(
-                                  event.target.value === ""
-                                    ? rest
-                                    : {
-                                        ...rest,
-                                        [proposal.key]:
-                                          event.target.value === "new"
-                                            ? null
-                                            : event.target.value,
-                                      },
-                                );
-                              }}
-                            >
-                              <option value="">
-                                Automatic: new question
-                              </option>
-                              <option value="new">Create a new question</option>
-                              {proposal.candidates.map((candidate: any) => (
-                                <option
-                                  key={candidate.id}
-                                  value={candidate.id}
-                                  disabled={!candidate.choicesCompatible}
-                                >
-                                  {candidate.title}
-                                  {!candidate.choicesCompatible
-                                    ? " · choices changed"
-                                    : ""}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ))}
-                      <button
-                        disabled={busy || !importPreview.canCommit}
-                        onClick={() =>
+                {!materialRoot && (
+                  <section className="panel">
+                    <h2>Import Markdown</h2>
+                    <label>
+                      Choose a file
+                      <input
+                        type="file"
+                        accept=".md,.markdown,text/markdown"
+                        onChange={(e) =>
                           void run(async () => {
-                            await api(
-                              `${scope}/imports/${importPreview.id}/${importPreview.localRoot ? "root-commit" : "commit"}`,
-                              { acceptWarnings: true, identityMappings },
-                            );
-                            showImportPreview(null);
-                            setImportContent("");
-                            await loadFiles();
-                            await refresh();
+                            const selected = e.target.files?.[0];
+                            if (selected) {
+                              setImportPath(selected.name);
+                              setImportContent(await selected.text());
+                              showImportPreview(null);
+                            }
                           })
                         }
-                      >
-                        Confirm import
-                      </button>
-                    </div>
-                  )}
-                </section>
+                      />
+                    </label>
+                    <label>
+                      File name
+                      <input
+                        value={importPath}
+                        onChange={(e) => {
+                          setImportPath(e.target.value);
+                          showImportPreview(null);
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Markdown source
+                      <textarea
+                        rows={10}
+                        value={importContent}
+                        onChange={(e) => {
+                          setImportContent(e.target.value);
+                          showImportPreview(null);
+                        }}
+                        placeholder="Paste your question-bank Markdown"
+                      />
+                    </label>
+                    <button
+                      disabled={busy || !importContent.trim()}
+                      onClick={() =>
+                        void run(async () =>
+                          showImportPreview(
+                            await api(`${scope}/imports/preview`, {
+                              files: [
+                                {
+                                  path: importPath,
+                                  content: importContent,
+                                  type: "questions",
+                                },
+                              ],
+                            }),
+                          ),
+                        )
+                      }
+                    >
+                      Preview import
+                    </button>
+                    {importPreview && (
+                      <div className="import-result">
+                        <h3>
+                          {importPreview.counts?.questions || 0} questions found
+                        </h3>
+                        {importPreview.issues?.map(
+                          (issue: any, index: number) => (
+                            <p
+                              key={index}
+                              className={
+                                issue.severity === "error" ? "error" : "muted"
+                              }
+                            >
+                              {issue.path}:{issue.line} · {issue.message}
+                            </p>
+                          ),
+                        )}
+                        {importPreview.identityProposals
+                          ?.filter(
+                            (proposal: any) =>
+                              !proposal.automatic &&
+                              proposal.candidates.length > 0,
+                          )
+                          .map((proposal: any) => (
+                            <label key={proposal.key}>
+                              {proposal.title}: keep progress from an existing
+                              question?
+                              <select
+                                value={
+                                  identityMappings[proposal.key] === null
+                                    ? "new"
+                                    : identityMappings[proposal.key] || ""
+                                }
+                                onChange={(event) => {
+                                  const { [proposal.key]: _previous, ...rest } =
+                                    identityMappings;
+                                  setIdentityMappings(
+                                    event.target.value === ""
+                                      ? rest
+                                      : {
+                                          ...rest,
+                                          [proposal.key]:
+                                            event.target.value === "new"
+                                              ? null
+                                              : event.target.value,
+                                        },
+                                  );
+                                }}
+                              >
+                                <option value="">
+                                  Automatic: new question
+                                </option>
+                                <option value="new">
+                                  Create a new question
+                                </option>
+                                {proposal.candidates.map((candidate: any) => (
+                                  <option
+                                    key={candidate.id}
+                                    value={candidate.id}
+                                    disabled={!candidate.choicesCompatible}
+                                  >
+                                    {candidate.title}
+                                    {!candidate.choicesCompatible
+                                      ? " · choices changed"
+                                      : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ))}
+                        <button
+                          disabled={busy || !importPreview.canCommit}
+                          onClick={() =>
+                            void run(async () => {
+                              await api(
+                                `${scope}/imports/${importPreview.id}/${importPreview.localRoot ? "root-commit" : "commit"}`,
+                                { acceptWarnings: true, identityMappings },
+                              );
+                              showImportPreview(null);
+                              setImportContent("");
+                              await loadFiles();
+                              await refresh();
+                            })
+                          }
+                        >
+                          Confirm import
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
               </>
             )}
             <h2>AI notes</h2>
@@ -1042,157 +1221,7 @@ function App() {
                 </p>
               </section>
             )}
-            {chat?.messages?.map((m: any) => (
-              <article key={m.id} className={`message ${m.role}`}>
-                <span className="eyebrow">
-                  {m.role === "assistant"
-                    ? "TUTOR"
-                    : m.role === "user"
-                      ? "YOU"
-                      : m.role}
-                </span>
-                <Markdown text={m.content || ""} />
-                {m.sources?.length > 0 && (
-                  <div className="chips">
-                    {m.sources.map((source: any) => (
-                      <button
-                        className="secondary"
-                        key={source.id}
-                        onClick={() =>
-                          void run(async () =>
-                            setCitation(
-                              await api(
-                                `${scope}/chats/${chat.id}/messages/${m.id}/sources/${source.id}`,
-                              ),
-                            ),
-                          )
-                        }
-                      >
-                        {source.title || source.id}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {m.role === "assistant" && (
-                  <button
-                    className="quiet"
-                    onClick={() =>
-                      void run(async () => {
-                        await api(
-                          `${scope}/chats/${chat.id}/messages/${m.id}/save-note`,
-                          {
-                            title: chat.title,
-                            operationId: operation(),
-                          },
-                        );
-                        setSaveStatus("AI note saved");
-                      })
-                    }
-                  >
-                    Save as AI note
-                  </button>
-                )}
-              </article>
-            ))}
-            <form
-              className="composer"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  let current = chat;
-                  if (!current)
-                    current = await api(`${scope}/chats`, {
-                      title: prompt.slice(0, 60),
-                      kind: "ask",
-                    });
-                  setChat(current);
-                  const text = prompt;
-                  setPrompt("");
-                  try {
-                    const result = await api(
-                      `${scope}/chats/${current.id}/messages`,
-                      {
-                        text,
-                        model,
-                        stream: true,
-                        ...(chatSetId(current)
-                          ? { setId: chatSetId(current) }
-                          : {}),
-                        operationId: operation(),
-                      },
-                    );
-                    if (result.run?.id) {
-                      setActiveRun(result.run.id);
-                      let state = result.run;
-                      while (state.status === "running") {
-                        await new Promise((resolve) =>
-                          setTimeout(resolve, RUN_POLL_MS),
-                        );
-                        state = await api(`${scope}/runs/${result.run.id}`);
-                        setChat(await api(chatUrl(current)));
-                      }
-                      if (state.error)
-                        setError(
-                          typeof state.error === "string"
-                            ? state.error
-                            : state.error.message,
-                        );
-                    }
-                  } finally {
-                    setActiveRun(null);
-                    setChat(await api(chatUrl(current)));
-                  }
-                });
-              }}
-            >
-              <label htmlFor="tutor-prompt">Your question</label>
-              <label>
-                Model
-                <select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                >
-                  {(
-                    settings?.models || [{ id: DEFAULT_MODEL, enabled: true }]
-                  ).map((entry: any) => (
-                    <option
-                      key={entry.id}
-                      disabled={!entry.enabled}
-                      value={entry.id}
-                    >
-                      {entry.id}
-                      {!entry.enabled ? " · unavailable" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <textarea
-                id="tutor-prompt"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={3}
-                placeholder="What would you like to understand?"
-              />
-              <div className="row">
-                <span role="status" className="muted">
-                  {busy ? "Working…" : saveStatus}
-                </span>
-                <button disabled={busy || !prompt.trim()}>Send</button>
-                {activeRun && (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() =>
-                      void api(`${scope}/runs/${activeRun}/cancel`, {}).catch(
-                        (e) => setError(e.message),
-                      )
-                    }
-                  >
-                    Stop
-                  </button>
-                )}
-              </div>
-            </form>
+            {tutorConversation}
           </>
         )}
         {library && page === "History" && (
@@ -1319,19 +1348,18 @@ function App() {
               ))}
             </section>
             <section className="panel">
-              <h2>Configured material root</h2>
+              <h2>Configured material folder</h2>
               <button
-                disabled={busy}
+                disabled={busy || !materialRoot}
                 onClick={() =>
                   void run(async () => {
-                    showImportPreview(
-                      await api(`${scope}/imports/root-preview`, {}),
-                    );
-                    setPage("Materials");
+                    await syncMaterialRoot();
+                    await refresh();
+                    setSaveStatus("Folder synced");
                   })
                 }
               >
-                Preview files from configured root
+                Sync folder now
               </button>
             </section>
             <section className="panel">

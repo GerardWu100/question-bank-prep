@@ -67,3 +67,39 @@ test("root import refuses stale source bytes, then saves to the original file an
     await rm(root, { recursive: true, force: true });
   }
 });
+test("root sync imports the folder, skips unchanged bytes, and follows edits and removals", async () => {
+  const root = await mkdtemp(join(tmpdir(), "study-root-"));
+  const { app, store } = await buildApp();
+  registerMaterialRoutes(app, store, root, join(root, ".data"));
+  try {
+    await writeFile(join(root, "bank.md"), content);
+    const library = store.createLibrary("Local");
+    const sync = async () =>
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/libraries/${library.id}/imports/root-sync`,
+          payload: {},
+        })
+      ).json();
+    expect((await sync()).changed).toBe(true);
+    expect((await sync()).changed).toBe(false);
+    await writeFile(
+      join(root, "bank.md"),
+      content.replace("### Answer\nB", "### Answer\nC"),
+    );
+    expect((await sync()).changed).toBe(true);
+    const question = store
+      .list(library.id, "question")
+      .find((q: any) => q.active);
+    expect(question.answerKey).toBe("C");
+    await rm(join(root, "bank.md"));
+    await writeFile(join(root, "other.md"), content);
+    await sync();
+    const active = store.list(library.id, "file").filter((f: any) => f.active);
+    expect(active.map((f: any) => f.path)).toEqual(["other.md"]);
+  } finally {
+    await app.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

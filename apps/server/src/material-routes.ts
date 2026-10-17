@@ -27,6 +27,48 @@ export function registerMaterialRoutes(
     return root;
   };
   const base = "/api/libraries/:libraryId";
+  /** Commit a configured-folder preview and deactivate local files no longer in the folder. */
+  const commitRootPreview = (
+    lib: string,
+    preview: any,
+    previewHashes: Map<string, string>,
+    acceptWarnings: boolean,
+    identityMappings?: Record<string, string | null>,
+  ) =>
+    store.db.transaction(() => {
+      const result = store.commit(
+        lib,
+        preview.id,
+        acceptWarnings,
+        identityMappings,
+      );
+      for (const file of store.list(lib, "file"))
+        if (file.local && file.active && !previewHashes.has(file.path))
+          store.deactivateFile(lib, file);
+        else if (previewHashes.has(file.path) && !file.local)
+          store.put(lib, "file", { ...file, local: true });
+      return result;
+    })();
+  app.get("/api/material-root", async () => ({ configured: Boolean(root) }));
+  // Keep the library in step with the configured folder, so no manual import is needed.
+  // Unmatched re-import identities become new questions, as in an unanswered preview.
+  app.post(base + "/imports/root-sync", async (request: any) => {
+    const lib = request.params.libraryId;
+    const files = await scanRoot(requireRoot());
+    const fileHashes = new Map(files.map((f) => [f.path, hash(f.content)]));
+    const activeLocal = store
+      .list(lib, "file")
+      .filter((f: any) => f.local && f.active);
+    if (
+      activeLocal.length === files.length &&
+      activeLocal.every((f: any) => fileHashes.get(f.path) === f.hash)
+    )
+      return { changed: false, issues: [] };
+    const preview = store.preview(lib, files, { localRoot: true });
+    if (!preview.canCommit) return { changed: false, issues: preview.issues };
+    const result = commitRootPreview(lib, preview, fileHashes, true);
+    return { changed: true, issues: preview.issues, ...result };
+  });
   app.post(base + "/imports/root-preview", async (request: any) => {
     const files = await scanRoot(requireRoot());
     const preview = store.preview(request.params.libraryId, files, {
@@ -61,20 +103,13 @@ export function registerMaterialRoutes(
         "STALE_PREVIEW",
         "Folder files changed after preview. Preview again.",
       );
-    return store.db.transaction(() => {
-      const result = store.commit(
-        lib,
-        preview.id,
-        request.body?.acceptWarnings === true,
-        request.body?.identityMappings,
-      );
-      for (const file of store.list(lib, "file"))
-        if (file.local && file.active && !previewHashes.has(file.path))
-          store.deactivateFile(lib, file);
-        else if (previewHashes.has(file.path) && !file.local)
-          store.put(lib, "file", { ...file, local: true });
-      return result;
-    })();
+    return commitRootPreview(
+      lib,
+      preview,
+      previewHashes,
+      request.body?.acceptWarnings === true,
+      request.body?.identityMappings,
+    );
   });
   app.put(base + "/files/:id/local-save", async (request: any) => {
     const lib = request.params.libraryId,

@@ -86,8 +86,8 @@ nav button.active {
   border-bottom-color: #194b45;
 }
 main {
-  width: min(100%, 980px);
-  padding: 2.5rem clamp(1rem, 4vw, 3rem) 4rem;
+  width: 100%;
+  padding: 2.5rem clamp(1em, 4vw, 3.2em) 4rem;
   margin: auto;
   min-height: 75vh;
 }

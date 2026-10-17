@@ -14,7 +14,9 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   const library = await response.json();
   expect(response.ok()).toBeTruthy();
   await page.goto("/");
-  await page.getByLabel("Library", { exact: true }).selectOption(library.id);
+  // The library picker appears only when there is more than one library.
+  const picker = page.getByLabel("Library", { exact: true });
+  if (await picker.count()) await picker.selectOption(library.id);
   await page.getByRole("button", { name: "Materials", exact: true }).click();
   await page.getByLabel("Markdown source").fill(material);
   await page

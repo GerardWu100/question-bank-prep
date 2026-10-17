@@ -76,7 +76,7 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
       const runId = id();
       chat.messages.push({ id: id(), role: 'user', content: text, markdown: text, status: 'completed', mode, setId: body.setId }, { id: runId, role: 'assistant', content: '', markdown: '', status: 'running', mode, setId: body.setId });
       store.put(libraryId, 'chat', chat);
-      return store.put(libraryId, 'run', { id: runId, chatId: chat.id, status: 'running', model: body.model ?? 'gpt-6-luna', mode, createdAt: new Date().toISOString(), sources: [], tools: [] });
+      return store.put(libraryId, 'run', { id: runId, chatId: chat.id, status: 'running', model: body.model ?? 'gpt-6.1-sol', mode, createdAt: new Date().toISOString(), sources: [], tools: [] });
     });
     const existing = store.get(libraryId, run.id, 'run');
     if (existing.started || existing.status !== 'running') return { run: existing, chat: visibleChat(libraryId, store.get(libraryId, chat.id, 'chat'), body.setId) };
