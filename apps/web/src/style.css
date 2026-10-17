@@ -587,3 +587,11 @@ footer {
     grid-column: 1 / -1;
   }
 }
+.ai-badge {
+  margin-left: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #ece3f5;
+  color: #5b3d7a;
+  font-size: 0.8rem;
+}

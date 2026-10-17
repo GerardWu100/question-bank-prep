@@ -42,7 +42,10 @@ if (!inputs.length) {
 let errorCount = 0;
 const totals = { questions: 0, keyed: 0 };
 for (const file of markdownFiles(inputs)) {
-  const { questions, issues } = parseQuestions(readFileSync(file, "utf8"), file);
+  const { questions, issues } = parseQuestions(
+    readFileSync(file, "utf8"),
+    file,
+  );
   // Extra checks: titles are the question IDs, so a repeat means a copy/paste or ID slip.
   const seenTitles = new Map<string, number>();
   for (const question of questions) {
@@ -64,18 +67,24 @@ for (const file of markdownFiles(inputs)) {
       });
   }
   const keyed = questions.filter((q) => q.answerKey).length;
+  const aiKeyed = questions.filter((q) => q.answerByAI).length;
   const withSolution = questions.filter((q) => q.solution).length;
   const chapters = new Set(questions.map((q) => q.chapter)).size;
-  const cases = new Set(questions.filter((q) => q.caseTitle).map((q) => q.caseTitle)).size;
+  const cases = new Set(
+    questions.filter((q) => q.caseTitle).map((q) => q.caseTitle),
+  ).size;
   totals.questions += questions.length;
   totals.keyed += keyed;
   console.log(
-    `${relative(process.cwd(), file)}: ${questions.length} questions, ${keyed} keyed, ` +
+    `${relative(process.cwd(), file)}: ${questions.length} questions, ${keyed} keyed ` +
+      `(${aiKeyed} by AI), ` +
       `${withSolution} with solution, ${chapters} chapters, ${cases} cases`,
   );
   for (const issue of issues.sort((a, b) => a.line - b.line)) {
     if (issue.severity === "error") errorCount++;
-    console.log(`  ${issue.severity.toUpperCase()} line ${issue.line}: ${issue.message}`);
+    console.log(
+      `  ${issue.severity.toUpperCase()} line ${issue.line}: ${issue.message}`,
+    );
   }
 }
 console.log(

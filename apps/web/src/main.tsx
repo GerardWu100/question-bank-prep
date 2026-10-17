@@ -1041,7 +1041,14 @@ function App() {
                           </p>
                         )}
                       {question.answerKey && (
-                        <p>Answer: {question.answerKey}</p>
+                        <p>
+                          Answer: {question.answerKey}
+                          {question.answerByAI && (
+                            <span className="ai-badge">
+                              AI-written answer · not from the source
+                            </span>
+                          )}
+                        </p>
                       )}
                       <Markdown
                         text={

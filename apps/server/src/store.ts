@@ -74,6 +74,7 @@ export function presentQuestion(
 const CONTENT_FIELDS = [
   "fingerprint",
   "answerKey",
+  "answerByAI",
   "solution",
   "title",
   "chapter",

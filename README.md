@@ -55,10 +55,11 @@ Sources are read-only in the app; there is no editor and no Progress page. The a
 
 ## CFA material prompts
 
-The CFA Level II bank is built in two steps, both run in the private `cfa` repository so no study text lands in this public repository:
+The CFA Level II bank is built in three steps, both run in the private `cfa` repository so no study text lands in this public repository:
 
 1. **PDF → Markdown:** [docs/prompts/pdf-to-markdown.md](docs/prompts/pdf-to-markdown.md) converted `materials/` PDFs into `md_materials/` (finished).
 2. **Markdown → question bank:** send [docs/prompts/extract-questions.md](docs/prompts/extract-questions.md); it runs the `cfa-question-bank` skill in `cfa/.agents/skills/cfa-question-bank/` (`SKILL.md`, `template.md`, `sources.md`), which extracts questions into `cfa/question_bank/<NN-topic>/<source>.md`.
+3. **Dedupe and missing answers:** send [docs/prompts/review-questions.md](docs/prompts/review-questions.md); the `cfa-question-review` skill removes duplicate and near-duplicate questions (`npm run find-duplicates -- <bank-folder>` lists candidates) and writes missing keys under an `Answer (AI)` heading, which the app labels "AI-written answer · not from the source".
 
 ## AI and calculator
 

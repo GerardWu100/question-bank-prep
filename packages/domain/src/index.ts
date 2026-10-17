@@ -13,6 +13,8 @@ export type ParsedQuestion = {
   stem: string;
   choices: Choice[];
   answerKey: string | null;
+  /** True when the key sits under "Answer (AI)": written by AI, not given by the source. */
+  answerByAI: boolean;
   solution: string;
   line: number;
   fingerprint: string;
@@ -108,7 +110,8 @@ const QUESTION_HEADING = /^question\s+\S/i;
 const CASE_HEADING = /^(case|vignette)\b/i;
 const CHAPTER_HEADING = /^chapter\b/i;
 const CHOICES_HEADING = /^choices?$/i;
-const ANSWER_HEADING = /^(answer|answer key|correct answer)$/i;
+const ANSWER_HEADING = /^(answer|answer key|correct answer)( \(ai\))?$/i;
+const AI_ANSWER_HEADING = /\(ai\)$/i;
 const SOLUTION_HEADING = /^(solution|explanation)$/i;
 
 /**
@@ -227,8 +230,9 @@ export function parseQuestions(
     );
     // A section ends at the next sub-heading of the same or shallower depth.
     const sectionEnd = (section: (typeof sub)[number]) =>
-      sub.find((next) => next.start > section.start && next.depth <= section.depth)
-        ?.start ?? end;
+      sub.find(
+        (next) => next.start > section.start && next.depth <= section.depth,
+      )?.start ?? end;
     const stemEnd = Math.min(
       choiceHeading?.start ?? end,
       answerHeading?.start ?? end,
@@ -314,6 +318,11 @@ export function parseQuestions(
       stem,
       choices,
       answerKey,
+      answerByAI: Boolean(
+        answerKey &&
+        answerHeading &&
+        AI_ANSWER_HEADING.test(answerHeading.title),
+      ),
       solution,
       line: heading.line,
       fingerprint,

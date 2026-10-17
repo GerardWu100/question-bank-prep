@@ -49,6 +49,7 @@ Chapter  (# or any depth)
 | `Question <id>` | Starts a question. `<id>` can be any text: `Question 1`, `Question 3.2`, `Question A-7`. |
 | `Choices` or `Choice` | The answer options. Optional if the options follow the stem directly. |
 | `Answer`, `Answer key` or `Correct answer` | The key. |
+| `Answer (AI)` (also `Answer key (AI)`, `Correct answer (AI)`) | A key written by AI because the source gave none. It grades like any key, and the app labels it "AI-written answer · not from the source". |
 | `Solution` or `Explanation` | The worked explanation. |
 
 - Put `Choices`, `Answer` and `Solution` **one level deeper** than their `Question` heading.

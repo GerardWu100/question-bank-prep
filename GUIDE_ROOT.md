@@ -4,7 +4,7 @@
 
 Read README.md for running, docs/user/question-format.md (with examples/) for bank syntax, and ops/RECOVERY.md for recovery. The original implementation plan remains unchanged as the intended product contract. The app runs natively or from the `app` target of the Dockerfile; the `test` target is the reproducible Linux check. The user explicitly relaxed strict calculator isolation.
 
-The application is a TypeScript workspace: React/Vite in `apps/web`, Fastify in `apps/server`, a subscription adapter in `apps/ai-runtime`, and a disposable Pyodide worker in `apps/calculator`. `packages/domain` owns Markdown parsing and grading. Root scripts own reproducible tests, a synthetic scale benchmark, backup/restore, and `check-bank` (runs `parseQuestions` on bank files outside the app, for AI extraction loops).
+The application is a TypeScript workspace: React/Vite in `apps/web`, Fastify in `apps/server`, a subscription adapter in `apps/ai-runtime`, and a disposable Pyodide worker in `apps/calculator`. `packages/domain` owns Markdown parsing and grading. Root scripts own reproducible tests, a synthetic scale benchmark, backup/restore, `find-duplicates` (near-duplicate candidates: stem/choice Jaccard plus a case-passage gate, within a topic), and `check-bank` (runs `parseQuestions` on bank files outside the app, for AI extraction loops).
 
 ## Durable state and behavior
 
@@ -18,7 +18,7 @@ A question has overall state; each saved set has its own response. `Store.questi
 
 Focus items have one shape: `links: [{questionId, contentVersion, answerVersion, annotationVersion?}]`. `Store.focus()` drops deleted items and derives `stale` from those versions; staleness is never stored. Deterministic refresh items also keep `questionId` to find their previous item.
 
-The parser uses a Markdown syntax tree for headings and retains original content slices. A case passage runs to its first Question heading (so exhibits stay in it) and ends at the next heading of the same or shallower depth. Fingerprints include case, stem and choice semantics, exclude keys/solutions, and preserve numbers/operators.
+An `Answer (AI)` heading sets `answerByAI` (part of `CONTENT_FIELDS`, so a source key replacing an AI key makes a new revision); the UI badges it. The parser uses a Markdown syntax tree for headings and retains original content slices. A case passage runs to its first Question heading (so exhibits stay in it) and ends at the next heading of the same or shallower depth. Fingerprints include case, stem and choice semantics, exclude keys/solutions, and preserve numbers/operators.
 
 Re-import identity: an incoming question continues an old one automatically when exactly one same-file question has its fingerprint (ties break on title, chapter and case). Previews report this as `identityProposals[].automatic`; the UI asks only about proposals without one, and an unanswered proposal becomes a new question. A question keeps its `contentVersion` (and writes no new revision) unless fingerprint, key, solution, title, chapter or case title changed. A changed choice meaning cannot reuse the old selected label silently. Re-importing an inactive file with identical bytes reactivates it.
 

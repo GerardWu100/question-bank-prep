@@ -50,7 +50,13 @@ describe("parser edge cases", () => {
     expect(parsed).toMatchObject({ solution: "Because.", answerKey: "B" });
   });
   it("accepts common answer spellings but not ambiguous ones", () => {
-    for (const answer of ["b", "(B)", "B. two", "B\n\nTwo is right.", "**Answer:** B"])
+    for (const answer of [
+      "b",
+      "(B)",
+      "B. two",
+      "B\n\nTwo is right.",
+      "**Answer:** B",
+    ])
       expect(
         parseQuestions(question("Question 1", `### Answer\n${answer}\n`))
           .questions[0].answerKey,
@@ -65,7 +71,9 @@ describe("parser edge cases", () => {
     const { questions, issues } = parseQuestions(
       `## Question 1\nS\n### Choices\nA. a\nB. b\nC. c\nD. d\nE. e\nF. f\n### Answer\nF\n`,
     );
-    expect(issues.some((issue) => issue.message.includes("choice F"))).toBe(true);
+    expect(issues.some((issue) => issue.message.includes("choice F"))).toBe(
+      true,
+    );
     expect(questions[0].answerKey).toBeNull();
   });
   it("uses only the text line of a setext heading as its title", () => {
@@ -91,7 +99,9 @@ describe("re-import identity", () => {
     importFiles([{ path: "bank.md", content: bank() }]);
     store.deactivateFile(libraryId, store.list(libraryId, "file")[0]);
     store.bumpGeneration(libraryId);
-    expect(importFiles([{ path: "bank.md", content: bank() }]).questions).toBe(2);
+    expect(importFiles([{ path: "bank.md", content: bank() }]).questions).toBe(
+      2,
+    );
   });
   it("keeps unchanged questions on their content version and proposes them automatically", () => {
     const { store, libraryId, importFiles } = setup();
@@ -123,6 +133,25 @@ describe("re-import identity", () => {
         const q = store.get(libraryId, id, "question");
         return `${paths.get(q.fileId)}:${q.title}`;
       }),
-    ).toEqual(["a.md:Question 1", "a.md:Question 2", "b.md:Question 1", "b.md:Question 2"]);
+    ).toEqual([
+      "a.md:Question 1",
+      "a.md:Question 2",
+      "b.md:Question 1",
+      "b.md:Question 2",
+    ]);
+  });
+});
+
+describe("AI-written answers", () => {
+  it("grades an Answer (AI) key and flags it as not from the source", () => {
+    const { questions, issues } = parseQuestions(
+      question("Question 1", "### Answer (AI)\nB\n") +
+        question("Question 2", "### Answer\nC\n"),
+    );
+    expect(issues).toEqual([]);
+    expect(questions.map((q) => [q.answerKey, q.answerByAI])).toEqual([
+      ["B", true],
+      ["C", false],
+    ]);
   });
 });
