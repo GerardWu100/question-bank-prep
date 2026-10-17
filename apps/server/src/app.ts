@@ -127,6 +127,9 @@ export async function buildApp(
       "note",
       "expectedHash",
       "model",
+      "material",
+      "readingPath",
+      "readingTitle",
     ])
       if (body[field] !== undefined && typeof body[field] !== "string")
         throw new AppError(400, "INVALID_FIELD", `${field} must be text.`);

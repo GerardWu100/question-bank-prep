@@ -180,6 +180,19 @@ function App() {
     savePreference("theme", theme);
   }, [theme]);
   const sections = useMemo(() => splitSections(readingText), [readingText]);
+  /** Identifies a section's saved tutor chat: "3. Autocorrelation". */
+  const sectionKey = `${readingSection + 1}. ${sections[readingSection]?.title ?? ""}`;
+  // Reopen the saved tutor conversation for the open material section, if any.
+  useEffect(() => {
+    if (page !== "Materials" || !readingPath || !library) return;
+    void run(async () => {
+      const prior = (await api(`${scope}/chats`)).chats.find(
+        (c: any) =>
+          c.readingPath === readingPath && c.readingTitle === sectionKey,
+      );
+      setChat(prior ? await api(`${scope}/chats/${prior.id}`) : null);
+    });
+  }, [page, readingPath, sectionKey, library]);
   /** Open a reading file (read-only) at a section and remember the place. */
   const openReading = async (path: string, section = 0) => {
     const response = await fetch(
@@ -680,7 +693,7 @@ function App() {
           e.preventDefault();
           void run(async () => {
             let current = chat;
-            // Under a practice question the conversation belongs to that question.
+            // Under a practice question or a material section, the conversation belongs there.
             if (!current)
               current = await api(
                 `${scope}/chats`,
@@ -691,7 +704,13 @@ function App() {
                       setId: activeSet.id,
                       questionId: question.id,
                     }
-                  : { title: prompt.slice(0, 60), kind: "ask" },
+                  : page === "Materials" && readingPath
+                    ? {
+                        title: `${readingLabel(readingPath)} · ${sectionKey}`,
+                        readingPath,
+                        readingTitle: sectionKey,
+                      }
+                    : { title: prompt.slice(0, 60), kind: "ask" },
               );
             setChat(current);
             const text = prompt;
@@ -703,6 +722,10 @@ function App() {
                   text,
                   model,
                   stream: true,
+                  // The open section is the tutor's context for a material chat.
+                  ...(current.readingPath
+                    ? { material: sections[readingSection]?.text ?? "" }
+                    : {}),
                   ...(chatSetId(current) ? { setId: chatSetId(current) } : {}),
                   operationId: operation(),
                 },
@@ -1331,6 +1354,10 @@ function App() {
                           Next section →
                         </button>
                       </div>
+                      <section className="tutor-inline">
+                        <h2>Ask AI about this section</h2>
+                        {tutorConversation}
+                      </section>
                     </>
                   ) : (
                     <p className="muted">
@@ -1583,15 +1610,6 @@ function App() {
                 New conversation
               </button>
             </div>
-            {!chat?.messages?.length && (
-              <section className="panel">
-                <h2>A place to work it through.</h2>
-                <p>
-                  Ask about your material or open the tutor from a practice
-                  question.
-                </p>
-              </section>
-            )}
             {tutorConversation}
           </>
         )}

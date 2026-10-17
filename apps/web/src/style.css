@@ -796,3 +796,12 @@ footer {
     max-height: 40vh;
   }
 }
+.mermaid-diagram {
+  margin: 1rem 0;
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}

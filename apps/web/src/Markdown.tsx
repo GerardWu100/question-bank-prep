@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -21,12 +21,87 @@ function restoreEscapedDollars() {
   };
   return (tree: any) => visit(tree);
 }
-const remarkPlugins = [remarkGfm, remarkMath, restoreEscapedDollars];
+/**
+ * Raw HTML stays escaped for safety, but two harmless forms are common in converted notes:
+ * <br> (a line break, often inside table cells) becomes a real break, and <!-- comments -->
+ * are dropped instead of showing as text.
+ */
+function tidyInlineHtml() {
+  const visit = (node: any) => {
+    if (!node.children) return;
+    node.children = node.children.flatMap((child: any) => {
+      if (child.type === "html") {
+        if (/^<br\s*\/?>$/i.test(child.value.trim()))
+          return [{ type: "break" }];
+        if (/^<!--[\s\S]*-->$/.test(child.value.trim())) return [];
+      }
+      visit(child);
+      return [child];
+    });
+  };
+  return (tree: any) => visit(tree);
+}
+const remarkPlugins = [
+  remarkGfm,
+  remarkMath,
+  restoreEscapedDollars,
+  tidyInlineHtml,
+];
 const rehypePlugins = [rehypeKatex];
 const imagePlaceholder = (alt?: string) => (
   <span className="muted">[Image: {alt || "external image not loaded"}]</span>
 );
+let mermaidCount = 0;
+/**
+ * Draw a ```mermaid block as an SVG diagram. Mermaid loads on first use (it is large) in
+ * strict security mode, which sanitizes labels; a diagram that fails to parse stays as code.
+ */
+function MermaidDiagram({ code }: { code: string }) {
+  const [svg, setSvg] = useState("");
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let current = true;
+    const root = document.documentElement;
+    const dark =
+      root.dataset.theme === "dark" ||
+      (!root.dataset.theme &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches);
+    import("mermaid")
+      .then(async ({ default: mermaid }) => {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: dark ? "dark" : "neutral",
+        });
+        const result = await mermaid.render(`mermaid-${++mermaidCount}`, code);
+        if (current) setSvg(result.svg);
+      })
+      .catch(() => current && setFailed(true));
+    return () => {
+      current = false;
+    };
+  }, [code]);
+  if (failed)
+    return (
+      <pre>
+        <code>{code}</code>
+      </pre>
+    );
+  return (
+    <div
+      className="mermaid-diagram"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}
 const components: Components = {
+  pre: ({ children, node, ...rest }) => {
+    // react-markdown renders ```lang blocks as <pre><code class="language-lang">.
+    const code: any = Array.isArray(children) ? children[0] : children;
+    if (String(code?.props?.className ?? "").includes("language-mermaid"))
+      return <MermaidDiagram code={String(code.props.children ?? "").trim()} />;
+    return <pre {...rest}>{children}</pre>;
+  },
   img: ({ alt }) => imagePlaceholder(alt),
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noopener noreferrer">
