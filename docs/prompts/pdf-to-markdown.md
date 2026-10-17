@@ -17,7 +17,7 @@ Convert the full study-material PDFs into faithful Markdown lecture notes.
 
 ## Equations
 
-- Write inline math as `$...$` and standalone equations as `$$...$$` blocks. Do not use `\(...\)` or `\[...\]`.
+- Write inline math as `$...$` and standalone equations as `$$...$$` blocks. Do not use `\(...\)` or `\[...\]`. Write US-dollar amounts as `\$45`, never a bare `$45`, so a price is never read as the start of a formula (details below).
 - A display block's opening and closing `$$` each stand alone on their own line: no text before or after them on that line (not `$$ Actual P/E is…`, not `\end{aligned}$$`). Inside a list item, indent both fences and the formula exactly like the item's text. Reflow surrounding prose where necessary without changing its meaning or content.
 - Use `&` alignment and `\\` line breaks only inside `\begin{aligned}…\end{aligned}`. Use `\tag` only in display blocks.
 - Verify symbols, subscripts, superscripts, fractions, operators, values, and units against the rendered original slides. Do not rely on extracted text alone.
