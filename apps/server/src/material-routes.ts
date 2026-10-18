@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { join } from "node:path";
 import { AppError, Store } from "./store.js";
 import { hash } from "../../../packages/domain/src/index.js";
+import { IMAGE_TYPES, sendStudyFile } from "./reading-routes.js";
 import {
   scanRoot,
   safeSave,
@@ -54,6 +55,10 @@ export function registerMaterialRoutes(
       return result;
     })();
   app.get("/api/material-root", async () => ({ configured: Boolean(root) }));
+  // Images that bank files link to (for example assets/chart.svg), read-only.
+  app.get("/api/material-root/file", async (request: any, reply) =>
+    sendStudyFile(request, reply, requireRoot(), IMAGE_TYPES),
+  );
   // Keep the library in step with the configured folder, so no manual import is needed.
   // Unmatched re-import identities become new questions, as in an unanswered preview.
   app.post(base + "/imports/root-sync", async (request: any) => {

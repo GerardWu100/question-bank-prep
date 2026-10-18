@@ -101,9 +101,18 @@ const savePreference = (key: string, value: unknown) => {
     // Display settings simply reset next visit.
   }
 };
+/** "05-equity/qbank-2025.md" -> "05-equity": where a bank file's linked images live. */
+const bankFolder = (path?: string | null) =>
+  path == null ? undefined : path.split("/").slice(0, -1).join("/");
 /** A solution with its "Intuition (AI)" part, if any, lifted into a callout above the
  * source text, so the short explanation is read first. */
-function Solution({ text }: { text: string }) {
+function Solution({
+  text,
+  bankDirectory,
+}: {
+  text: string;
+  bankDirectory?: string;
+}) {
   const match = INTUITION_HEADING.exec(text);
   const source = (match ? text.slice(0, match.index) : text).trim();
   const intuition = match
@@ -114,11 +123,14 @@ function Solution({ text }: { text: string }) {
       {intuition && (
         <aside className="intuition">
           <span className="eyebrow">Intuition (AI)</span>
-          <Markdown text={intuition} />
+          <Markdown text={intuition} bankDirectory={bankDirectory} />
         </aside>
       )}
       {(source || !intuition) && (
-        <Markdown text={source || "No source solution is available."} />
+        <Markdown
+          text={source || "No source solution is available."}
+          bankDirectory={bankDirectory}
+        />
       )}
     </>
   );
@@ -1627,10 +1639,18 @@ function App() {
                         onToggle={(e) => setCaseOpen(e.currentTarget.open)}
                       >
                         <summary>Case passage</summary>
-                        {caseOpen && <Markdown text={question.caseText} />}
+                        {caseOpen && (
+                          <Markdown
+                            text={question.caseText}
+                            bankDirectory={bankFolder(question.path)}
+                          />
+                        )}
                       </details>
                     )}
-                    <Markdown text={question.stem || ""} />
+                    <Markdown
+                      text={question.stem || ""}
+                      bankDirectory={bankFolder(question.path)}
+                    />
                     <div className="choices">
                       {question.choices?.map((choice: any) => (
                         <button
@@ -1644,7 +1664,10 @@ function App() {
                           }
                         >
                           <span className="choice-label">{choice.label}</span>
-                          <Markdown text={choice.text} />
+                          <Markdown
+                            text={choice.text}
+                            bankDirectory={bankFolder(question.path)}
+                          />
                         </button>
                       ))}
                     </div>
@@ -1706,6 +1729,7 @@ function App() {
                           text={question.solution
                             .replace(SOURCE_LINE, "")
                             .trim()}
+                          bankDirectory={bankFolder(question.path)}
                         />
                       </div>
                     )}

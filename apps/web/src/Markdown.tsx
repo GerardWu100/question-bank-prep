@@ -209,32 +209,38 @@ function joinReadingPath(directory: string, src: string) {
 
 /** Shared safe renderer for materials, questions, solutions, notes, and chat.
  * Memoized: typing elsewhere in the app must not re-run Markdown and KaTeX parsing.
- * `readingDirectory` (a folder inside READING_ROOT) lets relative images load from the
- * read-only reading route; everywhere else images stay as placeholders. */
+ * `readingDirectory` (a folder inside READING_ROOT) or `bankDirectory` (a folder inside
+ * MATERIAL_ROOT) lets relative images load from that folder's read-only route; everywhere
+ * else images stay as placeholders. */
 export const Markdown = memo(function Markdown({
   text,
   readingDirectory,
+  bankDirectory,
 }: {
   text: string;
   readingDirectory?: string;
+  bankDirectory?: string;
 }) {
+  const directory = readingDirectory ?? bankDirectory;
+  const route =
+    readingDirectory !== undefined ? "reading/file" : "material-root/file";
   const rendered = useMemo<Components>(
     () =>
-      readingDirectory === undefined
+      directory === undefined
         ? components
         : {
             ...components,
             img: ({ src, alt }) =>
               typeof src === "string" && !/^[a-z]+:/i.test(src) ? (
                 <img
-                  src={`/api/reading/file?path=${encodeURIComponent(joinReadingPath(readingDirectory, decodeURI(src)))}`}
+                  src={`/api/${route}?path=${encodeURIComponent(joinReadingPath(directory, decodeURI(src)))}`}
                   alt={alt || ""}
                 />
               ) : (
                 imagePlaceholder(alt)
               ),
           },
-    [readingDirectory],
+    [directory, route],
   );
   return (
     <div className="markdown">

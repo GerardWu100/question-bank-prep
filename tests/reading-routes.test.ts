@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp } from "../apps/server/src/app.js";
+import { registerMaterialRoutes } from "../apps/server/src/material-routes.js";
 import {
   listReadingFilesWithSizes,
   readReadingLines,
@@ -23,6 +24,8 @@ test("reading folder lists Markdown and serves files read-only, refusing escapes
       "# Notes\n![x](assets/a.png)",
     );
     await writeFile(join(root, "Kaplan", "assets", "a.png"), "png");
+    await writeFile(join(root, "Kaplan", "assets", "a.svg"), "<svg/>");
+    await writeFile(join(root, "Kaplan", "assets", "a.html"), "<p>");
     await writeFile(join(outside, "secret.md"), "secret");
     await symlink(join(outside, "secret.md"), join(root, "link.md"));
     expect((await app.inject("/api/reading")).json()).toEqual({
@@ -35,7 +38,17 @@ test("reading folder lists Markdown and serves files read-only, refusing escapes
       "/api/reading/file?path=Kaplan%2Fassets%2Fa.png",
     );
     expect(image.headers["content-type"]).toBe("image/png");
-    for (const path of ["..%2Fsecret.md", "link.md", "Kaplan%2Fassets%2Fa.svg"])
+    // SVG is served, but sandboxed so a script inside it cannot run.
+    const svg = await app.inject(
+      "/api/reading/file?path=Kaplan%2Fassets%2Fa.svg",
+    );
+    expect(svg.headers["content-type"]).toBe("image/svg+xml");
+    expect(svg.headers["content-security-policy"]).toContain("sandbox");
+    for (const path of [
+      "..%2Fsecret.md",
+      "link.md",
+      "Kaplan%2Fassets%2Fa.html",
+    ])
       expect(
         (await app.inject(`/api/reading/file?path=${path}`)).statusCode,
       ).toBe(400);
@@ -43,6 +56,44 @@ test("reading folder lists Markdown and serves files read-only, refusing escapes
     await app.close();
     await rm(root, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("question-bank images load from the bank folder; questions name their bank file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "study-bank-"));
+  const data = await mkdtemp(join(tmpdir(), "study-data-"));
+  const { app, store } = await buildApp();
+  registerMaterialRoutes(app, store, root, data);
+  try {
+    await mkdir(join(root, "quant", "assets"), { recursive: true });
+    await writeFile(join(root, "quant", "assets", "fan.svg"), "<svg/>");
+    await writeFile(join(root, "quant", "drills.md"), "notes");
+    const library = store.createLibrary("Study");
+    const bank =
+      "# Chapter 1\n### Question Q-1\n![Fan](assets/fan.svg)\n#### Choices\nA. 1\nB. 2\n#### Answer\nA\n";
+    store.commit(
+      library.id,
+      store.preview(library.id, [{ path: "quant/drills.md", content: bank }])
+        .id,
+      true,
+    );
+    const [question] = store.list(library.id, "question");
+    expect(store.question(library.id, question.id).path).toBe(
+      "quant/drills.md",
+    );
+    const image = await app.inject(
+      "/api/material-root/file?path=quant%2Fassets%2Ffan.svg",
+    );
+    expect(image.headers["content-type"]).toBe("image/svg+xml");
+    // Images only: the bank's Markdown itself is not served here.
+    for (const path of ["quant%2Fdrills.md", "..%2Fx.png"])
+      expect(
+        (await app.inject(`/api/material-root/file?path=${path}`)).statusCode,
+      ).toBe(400);
+  } finally {
+    await app.close();
+    await rm(root, { recursive: true, force: true });
+    await rm(data, { recursive: true, force: true });
   }
 });
 

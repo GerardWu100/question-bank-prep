@@ -4,34 +4,45 @@ import { extname, join, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { AppError } from "./store.js";
 
-/** File types the reader serves, by extension. SVG is left out: it can carry scripts. */
-const READABLE_TYPES: Record<string, string> = {
-  ".md": "text/markdown; charset=utf-8",
+/** Image types served from the study folders, by extension. SVG can carry scripts, so
+ * every file is sent with SANDBOX_POLICY: a script inside never runs, even when the image
+ * is opened on its own (inside an <img> tag scripts never run anyway). */
+export const IMAGE_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
+  ".svg": "image/svg+xml",
 };
+/** File types the reader serves: Markdown notes and their images. */
+const READABLE_TYPES: Record<string, string> = {
+  ".md": "text/markdown; charset=utf-8",
+  ...IMAGE_TYPES,
+};
+const SANDBOX_POLICY =
+  "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox";
 /** Largest file the reader returns, in bytes (the biggest study file is about 4 MB). */
 const MAX_READING_BYTES = 20_000_000;
 
-/** Resolve a readable file under the reading root; traversal and symlinks are refused. */
-async function readingPath(root: string, path: string): Promise<string> {
+/** Resolve a file of an allowed type under root; traversal and symlinks are refused. */
+async function readingPath(
+  root: string,
+  path: string,
+  types: Record<string, string> = READABLE_TYPES,
+): Promise<string> {
   const base = await realpath(root);
   const target = resolve(base, path);
   const inside = relative(base, target);
   if (!inside || inside.startsWith("..") || resolve(base, inside) !== target)
+    throw new AppError(400, "INVALID_PATH", "Path is outside the folder.");
+  if (!types[extname(target).toLowerCase()])
     throw new AppError(
       400,
       "INVALID_PATH",
-      "Path is outside the reading folder.",
-    );
-  if (!READABLE_TYPES[extname(target).toLowerCase()])
-    throw new AppError(
-      400,
-      "INVALID_PATH",
-      "Only Markdown files and images can be read.",
+      types === READABLE_TYPES
+        ? "Only Markdown files and images can be read."
+        : "Only images can be read.",
     );
   let cursor = base;
   for (const part of inside.split("/")) {
@@ -237,6 +248,7 @@ export async function runRipgrep(root: string, args: string[]) {
  *
  * GET /api/reading       -> { configured, files: ["Kaplan/notes.md", ...] } (Markdown only)
  * GET /api/reading/file  -> raw bytes of one Markdown file or image (?path=relative/path)
+ * GET /api/material-root/file -> one image from the question-bank folder (material-routes)
  */
 export function registerReadingRoutes(
   app: FastifyInstance,
@@ -253,15 +265,33 @@ export function registerReadingRoutes(
         "ROOT_NOT_CONFIGURED",
         "Set READING_ROOT in the local .env file first.",
       );
-    const target = await readingPath(root, String(request.query.path ?? ""));
-    // Size and modification time identify a version: an unchanged file is answered with
-    // 304 Not Modified, so reopening a 4 MB note does not resend it.
-    const { size, mtimeMs } = await lstat(target);
-    const etag = `W/"${size}-${Math.floor(mtimeMs)}"`;
-    reply.header("etag", etag).header("cache-control", "no-cache");
-    if (request.headers["if-none-match"] === etag)
-      return reply.code(304).send();
-    reply.type(READABLE_TYPES[extname(target).toLowerCase()]);
-    return readFile(target);
+    return sendStudyFile(request, reply, root, READABLE_TYPES);
   });
+}
+
+/**
+ * Send one file of an allowed type from root (?path=relative/path). Size and modification
+ * time identify a version: an unchanged file is answered with 304 Not Modified, so
+ * reopening a 4 MB note does not resend it.
+ */
+export async function sendStudyFile(
+  request: any,
+  reply: any,
+  root: string,
+  types: Record<string, string>,
+) {
+  const target = await readingPath(
+    root,
+    String(request.query.path ?? ""),
+    types,
+  );
+  const { size, mtimeMs } = await lstat(target);
+  const etag = `W/"${size}-${Math.floor(mtimeMs)}"`;
+  reply
+    .header("etag", etag)
+    .header("cache-control", "no-cache")
+    .header("content-security-policy", SANDBOX_POLICY);
+  if (request.headers["if-none-match"] === etag) return reply.code(304).send();
+  reply.type(types[extname(target).toLowerCase()]);
+  return readFile(target);
 }

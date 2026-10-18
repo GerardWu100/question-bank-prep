@@ -856,10 +856,23 @@ export class Store {
           confidence: question.state.confidence,
         };
     }
-    return presentQuestion(question, {
-      setState,
-      reveal: setState ? setState.submitted : Boolean(question.state.selection),
-    });
+    return presentQuestion(
+      // The bank file's path lets the page load images that the question links to.
+      { ...question, path: this.filePath(libraryId, question.fileId) },
+      {
+        setState,
+        reveal: setState
+          ? setState.submitted
+          : Boolean(question.state.selection),
+      },
+    );
+  }
+  /** A file record's path ("05-equity/qbank-2025.md"), read without its content. */
+  filePath(libraryId: string, fileId: string): string | null {
+    const row = this.sql(
+      "SELECT json_extract(data,'$.path') AS path FROM records WHERE id=? AND library_id=?",
+    ).get(fileId, libraryId) as any;
+    return row?.path ?? null;
   }
   answer(libraryId: string, questionId: string, body: any) {
     return this.operation(

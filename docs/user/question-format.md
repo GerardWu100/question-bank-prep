@@ -105,6 +105,10 @@ Shared passage text...
 - The case ends at the next heading at its own level or higher, or at a `Chapter` heading.
 - "Shuffle case groups" keeps a case's questions together, in source order.
 
+## Images
+
+Link a picture relative to the bank file, for example `![Yield curve](assets/yield-curve.svg)` in `question_bank/06-fixed-income/others.md` points to `question_bank/06-fixed-income/assets/yield-curve.svg`. PNG, JPEG, GIF, WebP and SVG work, in a case passage, a question, a choice or a solution. The picture shows when the bank comes from the question-bank folder (the desktop app's **File → Question-bank folder…**, `MATERIAL_ROOT`, or the Docker `/question_bank` mount). A bank uploaded through **Import Markdown** has no folder, so its pictures show as their alt text. Keep only images in `assets/`: every `.md` file in the folder is read as a bank.
+
 ## Notes (reading material)
 
 A file with no `Question` headings is reading material. Import it with type **note**. If you import it as a question bank, the import stops with "No Question headings found". The tutor can search and cite notes.
