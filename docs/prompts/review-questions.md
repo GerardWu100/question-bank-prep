@@ -112,9 +112,9 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
    ```markdown
    | Choice | Why |
    |---|---|
-   | A | Wrong: heteroskedasticity biases the standard errors, not the coefficients |
-   | B | Right: the t-statistics are unreliable |
-   | C | Wrong: that is multicollinearity |
+   | A. Coefficients are biased | ✗ Heteroskedasticity leaves coefficients unbiased |
+   | B. t-statistics are unreliable | ✓ Standard errors are wrong, so t-tests mislead |
+   | C. Regressors are correlated | ✗ That is multicollinearity |
    ```
 
 5. **Log** each one in the review log under **AI explanations**: date, question ID, file, visual used (formula, table or diagram).
