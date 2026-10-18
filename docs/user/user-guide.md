@@ -60,7 +60,7 @@ To update later: `docker compose pull && docker compose up -d`. Your answers, ch
 | **Notes** | Your own notes and saved tutor replies, each with **Delete**. The AI notes tab has a chat box; **Continue this chat** reopens the conversation a note came from. |
 | **History** | Every tutor conversation. |
 | **Guide** | This guide inside the app, with the three bank-building prompts ready to copy. |
-| **Settings** | Export and **Import study progress**, Display (text size, theme), Practice (show the answer on click), AI provider (Codex login or API key), tutor model and thinking level, and folder sync. |
+| **Settings** | Export and **Import study progress**, Display (text size, theme, line width, line spacing), Practice (show the answer on click), AI provider (Codex login or API key), tutor model and thinking level, and folder sync. |
 
 The app reads your question folder again each time you open it, and keeps your answer history when a file changes. Without a configured folder, use **Materials → Import Markdown → Choose a folder** (a whole bank) or **Choose a file** (one bank file).
 

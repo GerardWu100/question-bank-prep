@@ -5,17 +5,17 @@
 :root {
   color-scheme: light dark;
   /* Page and the raised cards on it. */
-  --bg: light-dark(#f3f2ec, #111517);
-  --surface: light-dark(#fffefb, #191e20);
+  --bg: light-dark(#f3f2ec, #151515);
+  --surface: light-dark(#fffefb, #1a1a1a);
   /* Fields and answer choices: a step brighter than the card they sit on. */
-  --surface-field: light-dark(#ffffff, #1f2629);
+  --surface-field: light-dark(#ffffff, #202020);
   /* Tinted wells inside a card: stats, code, badges. */
-  --surface-sunken: light-dark(#eceee6, #232a2d);
-  --border: light-dark(#dcdfd5, #2c3437);
-  --border-strong: light-dark(#bfc7bb, #414c4f);
-  --text: light-dark(#1b2826, #e6ebe9);
-  --text-muted: light-dark(#4b5954, #b3bdb9);
-  --text-subtle: light-dark(#5f6b67, #949f9b);
+  --surface-sunken: light-dark(#eceee6, #242423);
+  --border: light-dark(#dcdfd5, #2e2e2c);
+  --border-strong: light-dark(#bfc7bb, #454542);
+  --text: light-dark(#1b2826, #f0efec);
+  --text-muted: light-dark(#4b5954, #c1c0be);
+  --text-subtle: light-dark(#5f6b67, #9c9a94);
   /* Brand teal: filled buttons, links, the active tab. */
   --accent: light-dark(#17594e, #6ccdbd);
   --accent-hover: light-dark(#0f463d, #8bdacc);
@@ -31,7 +31,7 @@
   --bad: light-dark(#b34e3d, #e57d6b);
   --bad-soft: light-dark(#f8e2dc, #3a2420);
   --bad-text: light-dark(#8a2e21, #f4aa9c);
-  --track: light-dark(#e2e3da, #2b3336);
+  --track: light-dark(#e2e3da, #2c2c2a);
   --backdrop: light-dark(rgb(22 38 34 / 0.7), rgb(0 0 0 / 0.72));
   --shadow: light-dark(
     0 1px 2px rgb(27 40 38 / 0.05),
@@ -145,6 +145,8 @@ nav button.active {
 }
 main {
   width: 100%;
+  /* Settings → Display → Line width sets --page-width; full width when unset. */
+  max-width: var(--page-width, none);
   padding: 1.2rem var(--gutter) 3rem;
   margin: auto;
   min-height: 75vh;
@@ -485,23 +487,28 @@ legend {
 .choice .markdown p {
   margin: 0.2rem 0;
 }
+/* The answer and solution. Only the edge and the label carry the result colour: long
+   solution text reads poorly on a green, amber or red fill. */
 .result {
   margin: 1.4rem 0;
-  padding: 1rem 1.2rem;
+  padding: 0.2rem 0 0.2rem 1.2rem;
   border-left: 4px solid var(--good);
-  border-radius: 0 8px 8px 0;
-  background: var(--good-soft);
 }
 .result.unsure {
   border-color: var(--warn);
-  background: var(--warn-soft);
 }
 .result.wrong {
   border-color: var(--bad);
-  background: var(--bad-soft);
 }
 .result > strong {
   text-transform: capitalize;
+  color: var(--good);
+}
+.result.unsure > strong {
+  color: var(--warn);
+}
+.result.wrong > strong {
+  color: var(--bad-text);
 }
 .save-status {
   font-size: 0.85rem;
@@ -560,30 +567,69 @@ summary {
   font-family: var(--font-mono);
   font-size: 0.85rem;
 }
+/* The short AI explanation, shown above the source solution: a neutral well with a teal edge. */
+.intuition {
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.8em 1em 0.1em;
+  margin: 0.4em 0 1.2em;
+}
+.intuition .eyebrow {
+  display: block;
+  margin-bottom: 0.4em;
+  color: var(--accent-text);
+}
 /* Rendered Markdown: study notes, questions, explanations and tutor replies. */
 .markdown {
   overflow-wrap: anywhere;
-  line-height: 1.7;
+  /* Settings → Display → Line spacing sets --line-height; 1.5 is the WCAG minimum. */
+  line-height: var(--line-height, 1.5);
 }
 .markdown p,
 .markdown ul,
 .markdown ol {
-  margin: 0 0 0.9em;
+  margin: 0 0 1em;
 }
 .markdown li + li {
-  margin-top: 0.25em;
+  margin-top: 0.4em;
+}
+/* Heading ladder for notes, like Obsidian's reading view: one font with the body, each
+   level clearly bigger than the next (sizes in em, so they follow the text-size setting),
+   more space above a heading than below it so it belongs to the text it introduces. */
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-sans);
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 1.8em 0 0.6em;
 }
 .markdown h1 {
-  font-size: 1.6rem;
-  margin: 1.6em 0 0.6em;
+  font-size: 1.75em;
+  margin-top: 2em;
 }
 .markdown h2 {
-  font-size: 1.3rem;
-  margin: 1.5em 0 0.5em;
+  font-size: 1.5em;
 }
-.markdown h3,
+.markdown h3 {
+  font-size: 1.3em;
+}
 .markdown h4 {
-  margin: 1.3em 0 0.4em;
+  font-size: 1.15em;
+}
+.markdown h5 {
+  font-size: 1.05em;
+}
+.markdown h6 {
+  font-size: 1em;
+  color: var(--text-muted);
+}
+/* A heading straight after another heading needs only a small gap. */
+.markdown :is(h1, h2, h3, h4, h5, h6) + :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 0.6em;
+}
+.markdown :is(.table-scroll, .mermaid-diagram, img) {
+  margin-block: 1.2em;
 }
 .markdown > :first-child {
   margin-top: 0;
@@ -632,6 +678,9 @@ pre {
 .markdown td {
   padding: 0.5rem 0.6rem;
   text-align: left;
+  /* Wrap only between words: .markdown's break-anywhere rule would let a column shrink
+     to one letter wide ("Sta / ge"). A table too wide for the page scrolls instead. */
+  overflow-wrap: normal;
 }
 .markdown td {
   border-bottom: 1px solid var(--border);

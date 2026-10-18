@@ -26,10 +26,12 @@ The **Practice** page lists every topic. Each chapter row shows a progress bar: 
 **Answering a question**
 
 1. Pick **Sure** or **Unsure**. Choose *Unsure* when you guessed: a lucky guess then goes to the Unsure set instead of hiding among correct answers.
-2. Click a choice, then **Submit answer**. The key and the worked solution appear.
+2. Click a choice, then **Submit answer**. The key and the worked solution appear. A short **Intuition (AI)** note, when the bank has one, sits above the source's solution.
 3. Clicked the wrong letter by accident? **Misclicked** saves the correct answer instead, so the slip does not land in Mistakes.
 
 Want the answer at once, without Submit? Turn on **Settings → Practice → Show the answer as soon as I pick a choice**.
+
+Text hard to read? **Settings → Display** sets the text size (A− / A+), theme, line width (Full to Narrow) and line spacing.
 
 **Previous** and **Next** stay at the top of the screen; the left and right arrow keys do the same. The numbers under the question jump to any question in the set and are coloured by result. **☆ Flag** stars a question for later. **← Back to Practice** is at the bottom.
 

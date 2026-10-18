@@ -64,6 +64,27 @@ const MIN_SECTION_LINES = 150;
 const FONT_SIZES = [14, 15, 17, 19, 21, 24];
 const DEFAULT_FONT_SIZE = 17;
 const THEMES = ["system", "light", "dark"] as const;
+/**
+ * Line width choices: label -> text column width in em (null = the whole window).
+ * Inter averages about half an em per character, so 42em is about 75 characters a line.
+ */
+const PAGE_WIDTHS = {
+  Full: null,
+  Wide: 60,
+  Medium: 50,
+  Narrow: 42,
+} as const;
+type PageWidth = keyof typeof PAGE_WIDTHS;
+/** Line spacing choices for notes, questions and replies: label -> CSS line-height. */
+const LINE_SPACINGS = {
+  Tight: 1.35,
+  Normal: 1.5,
+  Relaxed: 1.65,
+  Loose: 1.8,
+} as const;
+type LineSpacing = keyof typeof LINE_SPACINGS;
+/** The "Intuition (AI)" sub-heading that prompt 3 adds inside a solution. */
+const INTUITION_HEADING = /^#{2,6}[ \t]+Intuition \(AI\)[ \t]*$/m;
 /** Per-viewer display settings; storage may be unavailable (private window). */
 const loadPreference = <T,>(key: string, fallback: T): T => {
   try {
@@ -80,6 +101,29 @@ const savePreference = (key: string, value: unknown) => {
     // Display settings simply reset next visit.
   }
 };
+/** A solution with its "Intuition (AI)" part, if any, lifted into a callout above the
+ * source text, so the short explanation is read first. */
+function Solution({ text }: { text: string }) {
+  const match = INTUITION_HEADING.exec(text);
+  const source = (match ? text.slice(0, match.index) : text).trim();
+  const intuition = match
+    ? text.slice(match.index + match[0].length).trim()
+    : "";
+  return (
+    <>
+      {intuition && (
+        <aside className="intuition">
+          <span className="eyebrow">Intuition (AI)</span>
+          <Markdown text={intuition} />
+        </aside>
+      )}
+      {(source || !intuition) && (
+        <Markdown text={source || "No source solution is available."} />
+      )}
+    </>
+  );
+}
+
 /**
  * Split long Markdown into sections at # and ## headings (outside code fences), merging
  * short ones, so a 90,000-line file renders one readable piece at a time.
@@ -340,7 +384,15 @@ function App() {
     ),
     [theme, setTheme] = useState<(typeof THEMES)[number]>(() =>
       loadPreference("theme", "system"),
-    );
+    ),
+    [pageWidth, setPageWidth] = useState<PageWidth>(() => {
+      const saved = loadPreference<string>("pageWidth", "Full");
+      return saved in PAGE_WIDTHS ? (saved as PageWidth) : "Full";
+    }),
+    [lineSpacing, setLineSpacing] = useState<LineSpacing>(() => {
+      const saved = loadPreference<string>("lineSpacing", "Normal");
+      return saved in LINE_SPACINGS ? (saved as LineSpacing) : "Normal";
+    });
   // Apply display settings to the whole page and remember them for this browser.
   useEffect(() => {
     document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
@@ -355,6 +407,22 @@ function App() {
     else document.documentElement.dataset.theme = theme;
     savePreference("theme", theme);
   }, [theme]);
+  useEffect(() => {
+    const width = PAGE_WIDTHS[pageWidth];
+    const style = document.documentElement.style;
+    // The column plus the side gutters, so text width matches the chosen size.
+    if (width === null) style.removeProperty("--page-width");
+    else
+      style.setProperty("--page-width", `calc(${width}em + 2 * var(--gutter))`);
+    savePreference("pageWidth", pageWidth);
+  }, [pageWidth]);
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--line-height",
+      String(LINE_SPACINGS[lineSpacing]),
+    );
+    savePreference("lineSpacing", lineSpacing);
+  }, [lineSpacing]);
   /** Identifies a section's saved tutor chat: "3. Autocorrelation". */
   const sectionKey = `${readingSection + 1}. ${sections[readingSection]?.title ?? ""}`;
   // Reopen the saved tutor conversation for the open material section, if any.
@@ -1633,12 +1701,11 @@ function App() {
                             Answer: {question.answerKey}
                           </p>
                         )}
-                        <Markdown
-                          text={
-                            // The trailing "*Source: …*" line is for tracing, not for reading.
-                            question.solution.replace(SOURCE_LINE, "").trim() ||
-                            "No source solution is available."
-                          }
+                        <Solution
+                          // The trailing "*Source: …*" line is for tracing, not for reading.
+                          text={question.solution
+                            .replace(SOURCE_LINE, "")
+                            .trim()}
                         />
                       </div>
                     )}
@@ -2282,6 +2349,29 @@ function App() {
                         ? "☀ Light"
                         : "◐ Auto"}
                   </button>
+                  <span className="muted">Line width</span>
+                  <select
+                    aria-label="Line width"
+                    id="page-width"
+                    value={pageWidth}
+                    onChange={(e) => setPageWidth(e.target.value as PageWidth)}
+                  >
+                    {Object.keys(PAGE_WIDTHS).map((label) => (
+                      <option key={label}>{label}</option>
+                    ))}
+                  </select>
+                  <span className="muted">Line spacing</span>
+                  <select
+                    aria-label="Line spacing"
+                    value={lineSpacing}
+                    onChange={(e) =>
+                      setLineSpacing(e.target.value as LineSpacing)
+                    }
+                  >
+                    {Object.keys(LINE_SPACINGS).map((label) => (
+                      <option key={label}>{label}</option>
+                    ))}
+                  </select>
                 </div>
               </section>
               <section className="panel">
