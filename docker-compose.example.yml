@@ -33,6 +33,11 @@ services:
       # Set to true only when a reverse proxy serves this app over HTTPS: the
       # login cookie is then marked Secure. Keep false when reached directly.
       - TRUST_PROXY=false
+      # Most Codex model requests the whole app may send, so a leaked password
+      # cannot drain your ChatGPT plan. One tutor reply is 1 request plus 1 per
+      # tool round (at most 6). Whole numbers; 0 means no cap.
+      - AI_MAX_REQUESTS_PER_HOUR=60
+      - AI_MAX_REQUESTS_PER_DAY=300
     volumes:
       # Folder on your machine, then the path inside the container. Edit the
       # left side to keep files somewhere else; keep the right side as it is.
@@ -42,10 +47,26 @@ services:
       - $HOME/projects/cfa/question_bank:/question_bank:ro
       # Study notes shown on the Materials page and searched by the tutor:
       - $HOME/projects/cfa/md_materials:/materials:ro
-      # Your Codex ChatGPT login, for the tutor. Read-only: Codex on this
-      # machine keeps refreshing it; the app never does. Remove the line to
-      # run without AI.
-      - $HOME/.codex:/codex:ro
+      # Your Codex ChatGPT login, for the tutor: only the login file and the
+      # model list, never the whole ~/.codex folder (chat history, config and
+      # other secrets stay out of the container). Read-only: Codex on this
+      # machine keeps refreshing the file in place; the app never does.
+      # create_host_path: false makes Compose stop with an error when a file
+      # is missing, instead of creating an empty folder in its place. After
+      # `codex logout` and a new login, restart the container. Remove both
+      # entries to run without AI.
+      - type: bind
+        source: ${HOME}/.codex/auth.json
+        target: /codex/auth.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOME}/.codex/models_cache.json
+        target: /codex/models_cache.json
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - single
 

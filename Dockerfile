@@ -27,7 +27,8 @@ RUN npm run build
 #   /data            database and backups (writable)
 #   /question_bank   question-bank folder, synced on open (read-only)
 #   /materials       study notes for the Materials page and the tutor (read-only)
-#   /codex           an existing Codex ChatGPT login, for the tutor (read-only)
+#   /codex           auth.json and models_cache.json from an existing Codex ChatGPT
+#                    login, mounted as single files (read-only)
 # HOME=/tmp lets the app run as any user id without a home folder.
 ENV STUDY_HOST=0.0.0.0 STUDY_PORT=3000 STUDY_DATA_DIR=/data \
     MATERIAL_ROOT=/question_bank READING_ROOT=/materials CODEX_HOME=/codex HOME=/tmp

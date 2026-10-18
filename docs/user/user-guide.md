@@ -1,0 +1,98 @@
+# Question Bank Prep: user guide
+
+- **Code and issues:** <https://github.com/GerardWu100/question-bank-prep>
+- **Docker image:** `ghcr.io/gerardwu100/question-bank-prep:latest` (amd64 and arm64)
+
+Question Bank Prep is a self-hosted web app for practising multiple-choice exams such as the CFA® exam. Your questions stay in plain Markdown files that you own. The app grades your answers, tracks where you lose marks, shows your study notes, and has an AI tutor that uses your ChatGPT subscription through your Codex login.
+
+```mermaid
+flowchart LR
+  A[Study PDFs] -->|prompt 1| B[Markdown notes]
+  B -->|prompt 2| C[Question bank]
+  C -->|prompt 3| D[Clean bank]
+  B --> E[Materials page]
+  D --> F[Practice page]
+  E & F --> G[AI tutor]
+```
+
+## 1. What you need
+
+- A computer that stays on, with Docker.
+- A folder of question banks (Markdown). Step 4 below shows how to make one from your PDFs.
+- Optional: a folder of Markdown study notes, for the Materials page.
+- Optional: Codex signed in with ChatGPT on the same computer, for the AI tutor.
+
+## 2. Start the app
+
+1. Make an empty folder. Save [docker-compose.example.yml](../../docker-compose.example.yml) in it as `docker-compose.yml`.
+2. Change the left side of each `volumes` line to your own folders.
+3. Run `id -u` and `id -g`. If either is not `1000`, change `user:` to match.
+4. Make a file named `.env` in the same folder with one line: `STUDY_PASSWORD=<a password>`.
+5. Start it:
+
+   ```bash
+   docker compose up -d
+   ```
+
+6. Open `http://<server address>:6848` and sign in with that password.
+
+To update later: `docker compose pull && docker compose up -d`. Your answers, chats and notes live in the `/data` folder, so updates never lose them.
+
+## 3. Use the app
+
+| Page | What you do there |
+|---|---|
+| **Practice** | Pick a topic and chapter, then **Start**, **Continue** or **Review**. After an answer, mark it *unsure* if you guessed. **Mistakes**, **Unsure** and **★ Flagged** build review sets. **Resume last session** goes back to the exact question you left. |
+| **Materials** | Read your study notes one section at a time. **Ask AI about this section** explains it. |
+| **Ask AI** | Free questions to the tutor, and **Review my study**: your weak concepts and the next three chapters to practise. |
+| **Notes** | Your own notes and saved tutor replies. |
+| **History** | Every tutor conversation. |
+| **Settings** | Tutor model and thinking level, folder sync, and export (notes as Markdown, progress as CSV). |
+
+The app reads your question folder again each time you open it, and keeps your answer history when a file changes.
+
+## 4. Build a bank from your PDFs: three prompts
+
+You do not type questions in. An AI coding agent (Codex, Claude Code or similar) does it with three prompts. Keep your study folder in its own **private** Git repository, because it holds copyrighted material.
+
+| Step | Prompt | Input | Output |
+|---|---|---|---|
+| 1 | [PDF → Markdown](../prompts/pdf-to-markdown.md) | `materials/` (PDFs) | `md_materials/`: faithful notes with formulas and tables |
+| 2 | [Extract questions](../prompts/extract-questions.md) | `md_materials/` | `question_bank/<NN-topic>/<source>.md`: questions copied word for word |
+| 3 | [Review the bank](../prompts/review-questions.md) | `question_bank/` | Duplicates removed; missing keys added under `Answer (AI)` |
+
+How to run each prompt:
+
+1. Open the prompt file and copy everything.
+2. Fill in its **Settings** block: your repository URL, exam name, folders, and the file that lists your topics and chapters (the "outline").
+3. Paste it into a new agent session. The agent pulls the repository, does the job, checks its own work, and commits and pushes.
+4. For prompt 2, run one job per session: one source × one topic. Several sessions can run in parallel.
+5. Run the prompts in order 1 → 2 → 3. Run prompt 3 again after you add a new source.
+
+Then point the app's `question_bank` and `md_materials` volumes at that repository's folders. An AI key never replaces a key from the source; the app shows it as AI-written.
+
+The question format is in the [format guide](question-format.md).
+
+## 5. The AI tutor
+
+- **Hint** (before you answer): one hint at a time. The tutor cannot see the key or the solution.
+- **Explain** (after you answer): why the key is right and why your choice was wrong.
+- It searches your study notes and ends with the file and section it used.
+- It only sends the current question or note section, recent messages of that chat, and what it looks up.
+- Only one reply runs at a time. Practice works fully without AI.
+
+**Login safety.** The container gets only two files from `~/.codex`: `auth.json` (the login) and `models_cache.json` (your model list). Your Codex chat history, settings and other files stay out. Both are read-only; Codex on the host keeps refreshing the login. After `codex logout` and a new login, restart the container (`docker compose restart`).
+
+**Usage cap.** The whole app may send at most **60 Codex requests an hour and 300 a day** (one reply is one request plus one per lookup round, at most 6). This stops a leaked password or a bug from draining your ChatGPT plan. Past the cap, the tutor tells you when it can answer again. Change the caps with `AI_MAX_REQUESTS_PER_HOUR` and `AI_MAX_REQUESTS_PER_DAY` in `docker-compose.yml` (`0` turns a cap off).
+
+## 6. Problems
+
+| You see | Do this |
+|---|---|
+| Compose stops: a Codex file does not exist | Sign in to Codex with ChatGPT and open it once, then start again. Or remove both Codex entries to run without AI. |
+| "Codex subscription token expired" or "catalog is stale" | Open Codex on the host so it refreshes, then try again. |
+| "AI usage limit reached" | Wait until the time shown, or raise the cap. |
+| A bank file does not appear | Check it with `npm run check-bank -- <file>` in a checkout of the code, or look at the issues the app shows after sync. |
+| Forgot the password | Change `STUDY_PASSWORD` in `.env`, then `docker compose up -d`. |
+
+CFA® and Chartered Financial Analyst® are trademarks of CFA Institute. This project is not affiliated with CFA Institute and ships no exam questions.

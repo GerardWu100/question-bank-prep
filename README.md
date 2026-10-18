@@ -1,6 +1,6 @@
 # Question Bank Prep
 
-**A self-hosted practice app for the CFA® exam and other multiple-choice exams, with an AI tutor built in.** Keep your question banks as plain Markdown, practise them by topic and chapter, see exactly where you lose marks, and get hints, explanations and a study review from an AI tutor that reads and cites your own notes. Three [ready prompts](#build-a-bank-from-your-pdfs-three-prompts) let an AI agent turn your study PDFs into notes and a clean question bank.
+**A self-hosted practice app for the CFA® exam and other multiple-choice exams, with an AI tutor built in.** Keep your question banks as plain Markdown, practise them by topic and chapter, see exactly where you lose marks, and get hints, explanations and a study review from an AI tutor that reads and cites your own notes. Three [ready prompts](#build-a-bank-from-your-pdfs-three-prompts) let an AI agent turn your study PDFs into notes and a clean question bank. New here? Start with the [user guide](docs/user/user-guide.md).
 
 [![Tests](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml/badge.svg)](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml)
 [![Docker image](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/GerardWu100/question-bank-prep/pkgs/container/question-bank-prep)
@@ -112,11 +112,23 @@ services:
     environment:
       - TZ=America/Toronto
       - STUDY_PASSWORD=${STUDY_PASSWORD}
+      - AI_MAX_REQUESTS_PER_HOUR=60   # cap on Codex use by the whole app
+      - AI_MAX_REQUESTS_PER_DAY=300
     volumes:
       - ~/.containers/question-bank-prep:/data              # database and backups
       - ~/projects/cfa/question_bank:/question_bank:ro      # question banks
       - ~/projects/cfa/md_materials:/materials:ro           # study notes
-      - ~/.codex:/codex:ro                                  # Codex login, for the tutor
+      # Codex login, for the tutor: the login file and model list only, not all of ~/.codex
+      - type: bind
+        source: ${HOME}/.codex/auth.json
+        target: /codex/auth.json
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${HOME}/.codex/models_cache.json
+        target: /codex/models_cache.json
+        read_only: true
+        bind: { create_host_path: false }
 ```
 
 Then start it from that folder:
@@ -136,15 +148,18 @@ docker run -d --name question-bank-prep --restart unless-stopped \
   -v ~/.containers/question-bank-prep:/data \
   -v ~/projects/cfa/question_bank:/question_bank:ro \
   -v ~/projects/cfa/md_materials:/materials:ro \
-  -v ~/.codex:/codex:ro \
+  --mount type=bind,src=$HOME/.codex/auth.json,dst=/codex/auth.json,readonly \
+  --mount type=bind,src=$HOME/.codex/models_cache.json,dst=/codex/models_cache.json,readonly \
   ghcr.io/gerardwu100/question-bank-prep:latest
 ```
 
-### Before you start: three things to check
+### Before you start: what to check
 
 | Check | Why | What to change |
 |---|---|---|
-| The left side of each volume line | Those are the folders on your computer | Your `question_bank`, `md_materials` and Codex folders; leave out the notes or Codex line to run without that feature |
+| The left side of each volume line | Those are the folders on your computer | Your `question_bank`, `md_materials` and Codex files; leave out the notes or both Codex entries to run without that feature |
+| Codex login files exist | Only `~/.codex/auth.json` and `~/.codex/models_cache.json` go into the container, never the rest of `~/.codex`; the container refuses to start if either is missing | Sign in to Codex with ChatGPT and open it once; after `codex logout` and a new login, restart the container |
+| `AI_MAX_REQUESTS_PER_HOUR`, `AI_MAX_REQUESTS_PER_DAY` | Caps how many Codex requests the whole app sends (default 60 an hour, 300 a day), so a leaked password cannot drain your ChatGPT plan | Raise them if the tutor stops you during normal study; `0` turns a cap off |
 | Run `id -u` and `id -g` | The database should belong to you, and the Codex login is readable only by you | If either is not `1000`, change `user:` |
 | `STUDY_PASSWORD` | The container listens beyond the server itself, so the app refuses to start without a password (Compose also refuses to start without it) | Set it in `.env` |
 | `TRUST_PROXY` | Behind a reverse proxy that serves HTTPS, the login cookie should be marked Secure | Set `TRUST_PROXY=true` only in that case; leave `false` when the app is reached directly |
@@ -206,7 +221,7 @@ Set `READING_ROOT` in `.env` to a folder of Markdown study material (for example
 
 ## AI and calculator
 
-AI uses the existing Codex ChatGPT subscription login read-only through the pinned pi-ai adapter. It does not refresh or copy credentials and has no API-key billing fallback. Codex remains the credential refresh owner. The app checks the local account model catalog and disables unavailable models; reopen Codex if its catalog or login has expired. Only explicitly sent context and retrieved excerpts go to the provider. Every model Codex lists for your account is offered; pick the tutor model and its **Thinking** level (the levels Codex lists for that model) once on **Settings → AI model** (stored with the library; defaults `gpt-6.1-sol` and the model's Codex default level). The chat box has no model picker: Enter sends, Shift+Enter adds a line. **Review my study** (Ask AI page) has the tutor read your per-chapter results and mistakes, the questions you asked it, and your notes, then name your weak concepts and the next 3 chapters to practise. **Hint** (before you answer) and **Explain** (after you answer, and under each material section) send a ready-made request. With `READING_ROOT` set, the tutor can search your study notes (a read-only `rg`, or a built-in `search_study_notes` where ripgrep is not installed, plus `list_files` like ls/find and `read_file` by line offset, all locked to that folder; no general shell) to cite the exact file and section; these tools are off in hint mode because the notes include solved question banks. When the model returns a reasoning summary, the reply shows a folded **Reasoning** line above it. The tutor writes math with `$`/`$$` (`\[ \]` and `\( \)` are converted too) and ends with a `Source:` line naming the notes or library sources it used (left out under a practice question when it used only that question). After you answer, the tutor also sees your choice and whether it was right, so Explain addresses your mistake. Ask AI sits directly below each practice question; the conversation is saved per question (your messages and the tutor's replies, with model and sources) and reopens when you return to that question, and History lists every conversation. Before you answer, hint-mode messages are shown only in the set where they were written.
+AI uses the existing Codex ChatGPT subscription login read-only through the pinned pi-ai adapter. It does not refresh or copy credentials and has no API-key billing fallback. Codex remains the credential refresh owner. In Docker only the login file and model list are mounted, not the whole `~/.codex` folder. Every model request (one per reply plus one per tool round) counts toward a project-wide cap, `AI_MAX_REQUESTS_PER_HOUR` (default 60) and `AI_MAX_REQUESTS_PER_DAY` (default 300), kept in `codex-usage.json` in the data folder so a restart does not reset it; past the cap the tutor says when it can answer again. The app checks the local account model catalog and disables unavailable models; reopen Codex if its catalog or login has expired. Only explicitly sent context and retrieved excerpts go to the provider. Every model Codex lists for your account is offered; pick the tutor model and its **Thinking** level (the levels Codex lists for that model) once on **Settings → AI model** (stored with the library; defaults `gpt-6.1-sol` and the model's Codex default level). The chat box has no model picker: Enter sends, Shift+Enter adds a line. **Review my study** (Ask AI page) has the tutor read your per-chapter results and mistakes, the questions you asked it, and your notes, then name your weak concepts and the next 3 chapters to practise. **Hint** (before you answer) and **Explain** (after you answer, and under each material section) send a ready-made request. With `READING_ROOT` set, the tutor can search your study notes (a read-only `rg`, or a built-in `search_study_notes` where ripgrep is not installed, plus `list_files` like ls/find and `read_file` by line offset, all locked to that folder; no general shell) to cite the exact file and section; these tools are off in hint mode because the notes include solved question banks. When the model returns a reasoning summary, the reply shows a folded **Reasoning** line above it. The tutor writes math with `$`/`$$` (`\[ \]` and `\( \)` are converted too) and ends with a `Source:` line naming the notes or library sources it used (left out under a practice question when it used only that question). After you answer, the tutor also sees your choice and whether it was right, so Explain addresses your mistake. Ask AI sits directly below each practice question; the conversation is saved per question (your messages and the tutor's replies, with model and sources) and reopens when you return to that question, and History lists every conversation. Before you answer, hint-mode messages are shown only in the set where they were written.
 
 The calculator uses a disposable Pyodide worker with time and output limits. It needs no Docker. This is practical local containment, **not an operating-system sandbox** or a hard host memory limit. Do not expose it to untrusted public users.
 

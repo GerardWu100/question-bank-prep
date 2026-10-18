@@ -8,6 +8,7 @@ import staticFiles from "@fastify/static";
 import { buildApp, LOOPBACK_HOSTS } from "./app.js";
 import { AppError } from "./store.js";
 import { SubscriptionProvider } from "../../ai-runtime/index.js";
+import { CodexUsageLimit } from "../../ai-runtime/usage-limit.js";
 import { calculate } from "../../calculator/index.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -24,6 +25,16 @@ const optionalFolder = (name: "MATERIAL_ROOT" | "READING_ROOT") => {
 };
 const materialRoot = optionalFolder("MATERIAL_ROOT");
 const readingRoot = optionalFolder("READING_ROOT");
+/** A whole-number cap from the environment; 0 turns that cap off. */
+const usageCap = (name: "AI_MAX_REQUESTS_PER_HOUR" | "AI_MAX_REQUESTS_PER_DAY", fallback: number) => {
+  const value = Number(process.env[name] || fallback);
+  if (!Number.isInteger(value) || value < 0) throw new Error(`Invalid ${name}: use a whole number, 0 for no cap.`);
+  return value;
+};
+const usageLimit = new CodexUsageLimit(
+  { perHour: usageCap("AI_MAX_REQUESTS_PER_HOUR", 60), perDay: usageCap("AI_MAX_REQUESTS_PER_DAY", 300) },
+  resolve(dataDirectory, "codex-usage.json"),
+);
 const host = process.env.STUDY_HOST || "127.0.0.1";
 const port = Number(process.env.STUDY_PORT || "3000");
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -34,7 +45,7 @@ const { app, store } = await buildApp({
   databasePath: resolve(dataDirectory, "study.sqlite"),
   password: process.env.STUDY_PASSWORD,
   logger: true,
-  provider: new SubscriptionProvider(),
+  provider: new SubscriptionProvider(undefined, usageLimit),
   calculator: calculate,
   readingRoot,
   trustProxy: process.env.TRUST_PROXY === "true",

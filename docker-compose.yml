@@ -13,8 +13,22 @@ services:
     environment:
       - TZ=America/Toronto
       - STUDY_PASSWORD=${STUDY_PASSWORD:?Set STUDY_PASSWORD in .env}
+      - AI_MAX_REQUESTS_PER_HOUR=${AI_MAX_REQUESTS_PER_HOUR:-60}
+      - AI_MAX_REQUESTS_PER_DAY=${AI_MAX_REQUESTS_PER_DAY:-300}
     volumes:
       - $HOME/.containers/question-bank-prep:/data
       - $HOME/projects/cfa/question_bank:/question_bank:ro
       - $HOME/projects/cfa/md_materials:/materials:ro
-      - $HOME/.codex:/codex:ro
+      # Only the Codex login file and the model list, never the whole ~/.codex folder.
+      - type: bind
+        source: ${HOME}/.codex/auth.json
+        target: /codex/auth.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOME}/.codex/models_cache.json
+        target: /codex/models_cache.json
+        read_only: true
+        bind:
+          create_host_path: false

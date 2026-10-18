@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex';
 import { stream as codexStream } from '@earendil-works/pi-ai/api/openai-codex-responses';
 import { normalizeContext, type Context, type Tool, type Message } from '@earendil-works/pi-ai';
+import type { CodexUsageLimit } from './usage-limit.js';
 
 const MAX_PROMPT_LENGTH = 80_000;
 const MAX_REPLY_LENGTH = 100_000;
@@ -22,7 +23,9 @@ export interface StudyProvider { status(): Promise<AccountStatus>; models(): Pro
 /** Read existing subscription credentials without copying or refreshing Codex's rotating session. */
 export class SubscriptionProvider implements StudyProvider {
   private readonly codexDirectory: string;
-  constructor(codexDirectory = process.env.CODEX_HOME || join(homedir(), '.codex')) { this.codexDirectory = codexDirectory; }
+  /** Every model request, tool rounds included, passes this project-wide cap first. */
+  private readonly usageLimit?: CodexUsageLimit;
+  constructor(codexDirectory = process.env.CODEX_HOME || join(homedir(), '.codex'), usageLimit?: CodexUsageLimit) { this.codexDirectory = codexDirectory; this.usageLimit = usageLimit; }
 
   private async credentials(): Promise<{ access: string; catalog: CatalogEntry[] }> {
     let auth;
@@ -84,6 +87,8 @@ export class SubscriptionProvider implements StudyProvider {
       for (let step = 0; step < 6; step++) {
       let terminal = false;
       let continueTools = false;
+      const usage = this.usageLimit?.take();
+      if (usage && !usage.allowed) { yield { type: 'error', code: 'usage_limit', message: `AI usage limit reached: ${usage.limit} model requests per ${usage.window}. Try again after ${usage.retryAt.toLocaleString()}.` }; return; }
       // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
       for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) })) {
         if (event.type === 'text_delta') {
