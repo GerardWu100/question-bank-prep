@@ -15,6 +15,7 @@ How to use: open an AI coding session in your study repository, fill in **Settin
 - **TRACKING**: `docs/question-bank/` (holds `sources.md` and `review-log.md`)
 - **APP**: `<path to the question-bank-prep repository>`
 - **SCOPE**: `<BANK>/<NN-topic>/` (or the whole BANK)
+- **SOURCE_PRIORITY**: `<source codes from sources.md, highest first, for example "A > B, C > D"; or "none">`
 
 ## Task
 
@@ -51,8 +52,8 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
    - same stem but a different concept, learning objective, or choices that test different ideas: not a duplicate, keep both;
    - a question whose answer is one step of another (a one-period vs a two-period forecast): not a duplicate, because the multi-step version is its own skill; keep both.
    - Groups already under "Reviewed, kept both" need no new judgement.
-3. **Which copy to keep.** Practice is by topic and chapter, so the source does not matter. Keep any one copy; only prefer one with a source key and a solution over one without.
-4. **Cases move as a whole.** Remove a case only when more than half of its questions duplicate questions of one other case. Of two such cases, remove the one with the higher duplicate share (tie: keep the case with more questions, then the longer solutions). Before you delete, check each of its questions that has no copy: if no other question in the topic tests that concept, keep the case. Log each unique question you drop and where its concept is still tested.
+3. **Which copy to keep.** Follow SOURCE_PRIORITY: when copies come from different sources, keep the copy from the highest-priority source and remove the others, even if a lower-priority copy has the longer solution. Sources listed together (`B, C`) rank equally. Between copies of equal priority, or when SOURCE_PRIORITY is `none`, keep any one copy, preferring one with a source key and a solution. If the kept copy has no key but a removed copy has one, write that key and source in the log so Part B can use it as its reference.
+4. **Cases move as a whole.** Remove a case only when more than half of its questions duplicate questions of one other case. Of two such cases from sources of different priority, remove the one from the lower-priority source; otherwise remove the one with the higher duplicate share (tie: keep the case with more questions, then the longer solutions). A standalone question that duplicates a question inside a case of a higher-priority source is removed; one that duplicates a question in a lower-priority case is kept, and that case question stays too unless its whole case goes. Before you delete, check each of its questions that has no copy: if no other question in the topic tests that concept, keep the case. Log each unique question you drop and where its concept is still tested.
 5. **Delete** the removed questions or cases from their bank file. Leave every other question untouched.
 6. **Log** every removal (removed → kept, with the reason), and every group you judged not a duplicate.
 
