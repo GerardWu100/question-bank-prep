@@ -5,6 +5,7 @@
 [![Tests](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml/badge.svg)](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml)
 [![Docker image](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/GerardWu100/question-bank-prep/pkgs/container/question-bank-prep)
 ![Platforms](https://img.shields.io/badge/platforms-amd64%20%7C%20arm64-555)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/practice-dark.png">
@@ -242,4 +243,4 @@ Tests use synthetic material and the files in `examples/`, not a proprietary ban
 
 ## License and trademarks
 
-All rights reserved; see [LICENSE](LICENSE). CFA® and Chartered Financial Analyst® are trademarks owned by CFA Institute. This project is not affiliated with or endorsed by CFA Institute, and it ships no exam questions: the screenshots use an original demo bank.
+[MIT](LICENSE): free to use, change and share, including commercially, as long as the copyright notice stays with the code. The license covers this repository's code and documents, not the question banks or study material you load into the app. CFA® and Chartered Financial Analyst® are trademarks owned by CFA Institute. This project is not affiliated with or endorsed by CFA Institute, and it ships no exam questions: the screenshots use an original demo bank.
