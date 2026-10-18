@@ -8,7 +8,8 @@ import staticFiles from "@fastify/static";
 import { buildApp, LOOPBACK_HOSTS } from "./app.js";
 import { AppError } from "./store.js";
 import { SubscriptionProvider } from "../../ai-runtime/index.js";
-import { CodexUsageLimit } from "../../ai-runtime/usage-limit.js";
+import { AISettingsFile, ConfigurableProvider } from "../../ai-runtime/api-key.js";
+import { ModelUsageLimit } from "../../ai-runtime/usage-limit.js";
 import { calculate } from "../../calculator/index.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -31,9 +32,9 @@ const usageCap = (name: "AI_MAX_REQUESTS_PER_HOUR" | "AI_MAX_REQUESTS_PER_DAY", 
   if (!Number.isInteger(value) || value < 0) throw new Error(`Invalid ${name}: use a whole number, 0 for no cap.`);
   return value;
 };
-const usageLimit = new CodexUsageLimit(
+const usageLimit = new ModelUsageLimit(
   { perHour: usageCap("AI_MAX_REQUESTS_PER_HOUR", 60), perDay: usageCap("AI_MAX_REQUESTS_PER_DAY", 300) },
-  resolve(dataDirectory, "codex-usage.json"),
+  resolve(dataDirectory, "ai-usage.json"),
 );
 const host = process.env.STUDY_HOST || "127.0.0.1";
 const port = Number(process.env.STUDY_PORT || "3000");
@@ -45,14 +46,20 @@ const { app, store } = await buildApp({
   databasePath: resolve(dataDirectory, "study.sqlite"),
   password: process.env.STUDY_PASSWORD,
   logger: true,
-  provider: new SubscriptionProvider(undefined, usageLimit),
+  // Settings → AI provider picks the Codex login or an API key; the choice lives in the data folder.
+  provider: new ConfigurableProvider(
+    new AISettingsFile(resolve(dataDirectory, "ai-settings.json")),
+    new SubscriptionProvider(undefined, usageLimit),
+    usageLimit,
+  ),
   calculator: calculate,
   readingRoot,
   trustProxy: process.env.TRUST_PROXY === "true",
 });
 registerMaterialRoutes(app, store, materialRoot, dataDirectory);
 registerReadingRoutes(app, readingRoot);
-const webDirectory = resolve(root, "apps/web/dist");
+// STUDY_WEB_DIR lets a packaged build (the desktop app) serve the web build from elsewhere.
+const webDirectory = resolve(root, process.env.STUDY_WEB_DIR || "apps/web/dist");
 if (existsSync(webDirectory)) {
   await app.register(staticFiles, {
     root: webDirectory,

@@ -44,7 +44,7 @@ export function registerFocusRoutes(
         throw new AppError(
           503,
           "PROVIDER_UNAVAILABLE",
-          "Configure a supported subscription provider before AI Focus synthesis.",
+          "Configure an AI provider in Settings before AI Focus synthesis.",
         );
       if (typeof request.body?.model !== "string" || !request.body.model)
         throw new AppError(

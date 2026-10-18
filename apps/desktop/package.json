@@ -1,0 +1,64 @@
+{
+  "name": "question-bank-prep-desktop",
+  "productName": "Question Bank Prep",
+  "version": "0.2.0",
+  "description": "Question Bank Prep as a desktop app: practice Markdown question banks with an AI tutor.",
+  "homepage": "https://github.com/GerardWu100/question-bank-prep",
+  "author": "GerardWu100",
+  "license": "MIT",
+  "private": true,
+  "main": "main.cjs",
+  "desktopName": "question-bank-prep.desktop",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "pyodide": "314.0.7"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "io.github.gerardwu100.questionbankprep",
+    "productName": "Question Bank Prep",
+    "artifactName": "Question-Bank-Prep-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.cjs",
+      "package.json",
+      "build/**/*"
+    ],
+    "asar": false,
+    "npmRebuild": false,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Education",
+      "maintainer": "GerardWu100",
+      "syncDesktopName": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.education"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

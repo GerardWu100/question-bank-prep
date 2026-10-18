@@ -2,8 +2,9 @@
 
 - **Code and issues:** <https://github.com/GerardWu100/question-bank-prep>
 - **Docker image:** `ghcr.io/gerardwu100/question-bank-prep:latest` (amd64 and arm64)
+- **Desktop app:** [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest) for Linux, macOS and Windows
 
-Question Bank Prep is a self-hosted web app for practising multiple-choice exams such as the CFA® exam. Your questions stay in plain Markdown files that you own. The app grades your answers, tracks where you lose marks, shows your study notes, and has an AI tutor that uses your ChatGPT subscription through your Codex login.
+Question Bank Prep is a self-hosted web app for practising multiple-choice exams such as the CFA® exam. Your questions stay in plain Markdown files that you own. The app grades your answers, tracks where you lose marks, shows your study notes, and has an AI tutor that uses your ChatGPT subscription through your Codex login, or your own API key (for example free OpenRouter models).
 
 ```mermaid
 flowchart LR
@@ -17,12 +18,21 @@ flowchart LR
 
 ## 1. What you need
 
-- A computer that stays on, with Docker.
+- The desktop app, or a computer that stays on, with Docker.
 - A folder of question banks (Markdown). Step 4 below shows how to make one from your PDFs.
 - Optional: a folder of Markdown study notes, for the Materials page.
-- Optional: Codex signed in with ChatGPT on the same computer, for the AI tutor.
+- Optional, for the AI tutor: Codex signed in with ChatGPT on the same computer, or an API key (OpenRouter, OpenAI or similar).
 
 ## 2. Start the app
+
+**Desktop app (one computer, no password).**
+
+1. Download the installer for your system from the [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest).
+2. Install it. The installers are not signed: on macOS right-click the app → **Open**; on Windows click **More info → Run anyway**; on Linux run `chmod +x` on the AppImage.
+3. Open it and click **Create library**.
+4. **File → Question-bank folder…**: pick your `question_bank` folder. **File → Study-notes folder…**: pick your notes folder. The app restarts and loads them.
+
+**Server with Docker (reach it from any device, with a password).**
 
 1. Make an empty folder. Save [docker-compose.example.yml](../../docker-compose.example.yml) in it as `docker-compose.yml`.
 2. Change the left side of each `volumes` line to your own folders.
@@ -47,9 +57,15 @@ To update later: `docker compose pull && docker compose up -d`. Your answers, ch
 | **Ask AI** | Free questions to the tutor, and **Review my study**: your weak concepts and the next three chapters to practise. |
 | **Notes** | Your own notes and saved tutor replies. |
 | **History** | Every tutor conversation. |
-| **Settings** | Tutor model and thinking level, folder sync, and export (notes as Markdown, progress as CSV). |
+| **Settings** | AI provider (Codex login or API key), tutor model and thinking level, folder sync, export (notes as Markdown, progress as CSV, study data as JSON) and **Import study data**. |
 
 The app reads your question folder again each time you open it, and keeps your answer history when a file changes.
+
+**Move your progress to another install** (for example from the server to the desktop app):
+
+1. On the old install: **Settings → Export → Study data (JSON, for import)**.
+2. On the new install, load the same question bank first.
+3. **Settings → Import study data** → choose that file. The app says how many answers, flags and notes it imported, and lists questions it could not find.
 
 ## 4. Build a bank from your PDFs: three prompts
 
@@ -81,9 +97,18 @@ The question format is in the [format guide](question-format.md).
 - It only sends the current question or note section, recent messages of that chat, and what it looks up.
 - Only one reply runs at a time. Practice works fully without AI.
 
+**Use an API key instead of Codex.**
+
+1. **Settings → AI provider** → choose **API key**.
+2. Base URL: keep `https://openrouter.ai/api/v1` for OpenRouter, or pick another from the list.
+3. Paste your key. Then click **Browse the endpoint's models**, type `free` in the filter, and click the models you want (for example `openrouter/free`). Click **Save**.
+4. The models now appear under **Settings → AI model**. A free OpenRouter model can be busy ("rate-limited upstream"); try again or pick another.
+
+The key stays in `ai-settings.json` in the data folder and is never shown again in the app.
+
 **Login safety.** The container gets only two files from `~/.codex`: `auth.json` (the login) and `models_cache.json` (your model list). Your Codex chat history, settings and other files stay out. Both are read-only; Codex on the host keeps refreshing the login. After `codex logout` and a new login, restart the container (`docker compose restart`).
 
-**Usage cap.** The whole app may send at most **60 Codex requests an hour and 300 a day** (one reply is one request plus one per lookup round, at most 6). This stops a leaked password or a bug from draining your ChatGPT plan. Past the cap, the tutor tells you when it can answer again. Change the caps with `AI_MAX_REQUESTS_PER_HOUR` and `AI_MAX_REQUESTS_PER_DAY` in `docker-compose.yml` (`0` turns a cap off).
+**Usage cap.** The whole app may send at most **60 AI requests an hour and 300 a day** (one reply is one request plus one per lookup round, at most 6). This stops a leaked password or a bug from draining your ChatGPT plan or API budget. Past the cap, the tutor tells you when it can answer again. Change the caps with `AI_MAX_REQUESTS_PER_HOUR` and `AI_MAX_REQUESTS_PER_DAY` in `docker-compose.yml` (`0` turns a cap off).
 
 ## 6. Problems
 
@@ -92,6 +117,8 @@ The question format is in the [format guide](question-format.md).
 | Compose stops: a Codex file does not exist | Sign in to Codex with ChatGPT and open it once, then start again. Or remove both Codex entries to run without AI. |
 | "Codex subscription token expired" or "catalog is stale" | Open Codex on the host so it refreshes, then try again. |
 | "AI usage limit reached" | Wait until the time shown, or raise the cap. |
+| "API request failed: 429 … rate-limited upstream" | A free model is busy. Try again, or add another model in Settings → AI provider. |
+| macOS says the app "is damaged" or "cannot be opened" | Run `xattr -cr "/Applications/Question Bank Prep.app"`, then open it again. |
 | A bank file does not appear | Check it with `npm run check-bank -- <file>` in a checkout of the code, or look at the issues the app shows after sync. |
 | Forgot the password | Change `STUDY_PASSWORD` in `.env`, then `docker compose up -d`. |
 

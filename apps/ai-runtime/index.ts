@@ -3,16 +3,20 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex';
 import { stream as codexStream } from '@earendil-works/pi-ai/api/openai-codex-responses';
-import { normalizeContext, type Context, type Tool, type Message } from '@earendil-works/pi-ai';
-import type { CodexUsageLimit } from './usage-limit.js';
+import { normalizeContext, type AssistantMessageEvent, type Context, type Tool } from '@earendil-works/pi-ai';
+import type { ModelUsageLimit } from './usage-limit.js';
 
-const MAX_PROMPT_LENGTH = 80_000;
+export const MAX_PROMPT_LENGTH = 80_000;
 const MAX_REPLY_LENGTH = 100_000;
+/** Model calls one reply may make: the first answer plus up to five tool rounds. */
+const MAX_MODEL_STEPS = 6;
+const MAX_TOOL_CALLS_PER_STEP = 8;
+const TOOL_RESULT_CHARACTERS = 24_000;
 /** Thinking levels the pinned adapter accepts, lowest to highest. */
 export const THINKING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
 type CatalogEntry = { slug: string; display_name?: string; visibility?: string; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string }[] };
-const REQUEST_TIMEOUT_MS = 120_000;
+export const REQUEST_TIMEOUT_MS = 120_000;
 const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export type AIEvent = { type: 'text'; text: string } | { type: 'thinking'; text: string } | { type: 'done'; model: string; provider: string } | { type: 'error'; code: string; message: string };
 export interface ModelStatus { id: string; name: string; enabled: boolean; reason?: string; efforts: ThinkingEffort[]; defaultEffort?: ThinkingEffort }
@@ -20,12 +24,78 @@ export interface AccountStatus { available: boolean; provider: string; route: st
 export interface AIRequest { model: string; effort?: string; prompt: string; systemPrompt?: string; signal?: AbortSignal; history?: { role: 'user' | 'assistant'; content: string }[]; tools?: Tool[]; executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown> }
 export interface StudyProvider { status(): Promise<AccountStatus>; models(): Promise<ModelStatus[]>; stream(request: AIRequest): AsyncGenerator<AIEvent> }
 
+/** One model call: the transport's event stream for this (normalized) context. */
+export type ModelCall = (context: ReturnType<typeof normalizeContext>, signal: AbortSignal) => AsyncIterable<AssistantMessageEvent>;
+
+/**
+ * Run one tutor reply over any pi-ai transport: stream text, run requested tools, and
+ * call the model again with their results, at most MAX_MODEL_STEPS times. Every call
+ * first takes a slot from the shared usage cap. Only a terminal `stop` completes a reply.
+ *
+ * `failureMessage` turns a provider error (pi-ai's `errorMessage`, possibly undefined)
+ * into the text shown to the user; it must not echo credentials.
+ */
+export async function* streamWithTools(
+  request: AIRequest,
+  call: ModelCall,
+  done: { model: string; provider: string },
+  usageLimit: ModelUsageLimit | undefined,
+  failureMessage: (detail: string | undefined) => string,
+): AsyncGenerator<AIEvent> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  request.signal?.addEventListener('abort', abort, { once: true });
+  if (request.signal?.aborted) controller.abort();
+  const timer = setTimeout(abort, REQUEST_TIMEOUT_MS);
+  try {
+    // Earlier turns go in as user-role data, so a stored reply can never act as an instruction.
+    const history = (request.history ?? []).map(message => ({ role: 'user' as const, content: `Prior ${message.role} message (conversation data):\n${message.content}`, timestamp: Date.now() }));
+    const context: Context = { systemPrompt: request.systemPrompt, messages: [...history, { role: 'user', content: request.prompt, timestamp: Date.now() }], tools: request.tools };
+    let length = 0;
+    for (let step = 0; step < MAX_MODEL_STEPS; step++) {
+      let terminal = false;
+      let continueTools = false;
+      const usage = usageLimit?.take();
+      if (usage && !usage.allowed) { yield { type: 'error', code: 'usage_limit', message: `AI usage limit reached: ${usage.limit} model requests per ${usage.window}. Try again after ${usage.retryAt.toLocaleString()}.` }; return; }
+      for await (const event of call(normalizeContext(context), controller.signal)) {
+        if (event.type === 'text_delta') {
+          length += event.delta.length;
+          if (length > MAX_REPLY_LENGTH) { controller.abort(); yield { type: 'error', code: 'output_limit', message: 'Reply exceeded the output limit.' }; return; }
+          yield { type: 'text', text: event.delta };
+        } else if (event.type === 'thinking_delta') {
+          // Reasoning summary text (providers expose summaries or reasoning text, never hidden tokens).
+          yield { type: 'thinking', text: event.delta };
+        } else if (event.type === 'error') {
+          yield { type: 'error', code: controller.signal.aborted ? 'cancelled' : 'provider_error', message: controller.signal.aborted ? 'Generation stopped.' : failureMessage(event.error.errorMessage) };
+          return;
+        } else if (event.type === 'done') {
+          terminal = true;
+          if (event.reason === 'toolUse' && request.executeTool) {
+            context.messages.push(event.message);
+            for (const toolCall of event.message.content.filter(block => block.type === 'toolCall').slice(0, MAX_TOOL_CALLS_PER_STEP)) {
+              let result: unknown; let isError = false;
+              try { result = await request.executeTool(toolCall.name, toolCall.arguments); } catch { result = { error: 'Tool request denied or failed.' }; isError = true; }
+              context.messages.push({ role: 'toolResult', toolCallId: toolCall.id, toolName: toolCall.name, content: [{ type: 'text', text: JSON.stringify(result).slice(0, TOOL_RESULT_CHARACTERS) }], isError, timestamp: Date.now() });
+            }
+            continueTools = true;
+          } else if (event.reason !== 'stop') { yield { type: 'error', code: 'incomplete', message: 'Provider did not finish a complete reply.' }; return; }
+          else { yield { type: 'done', ...done }; return; }
+        }
+      }
+      if (!terminal) { yield { type: 'error', code: 'interrupted', message: 'Provider stream ended before completion.' }; return; }
+      if (!continueTools) return;
+    }
+    yield { type: 'error', code: 'tool_limit', message: 'Tutor reached the bounded tool-step limit.' };
+  } catch { yield { type: 'error', code: controller.signal.aborted ? 'cancelled' : 'provider_error', message: failureMessage(undefined) }; }
+  finally { clearTimeout(timer); request.signal?.removeEventListener('abort', abort); }
+}
+
 /** Read existing subscription credentials without copying or refreshing Codex's rotating session. */
 export class SubscriptionProvider implements StudyProvider {
   private readonly codexDirectory: string;
   /** Every model request, tool rounds included, passes this project-wide cap first. */
-  private readonly usageLimit?: CodexUsageLimit;
-  constructor(codexDirectory = process.env.CODEX_HOME || join(homedir(), '.codex'), usageLimit?: CodexUsageLimit) { this.codexDirectory = codexDirectory; this.usageLimit = usageLimit; }
+  private readonly usageLimit?: ModelUsageLimit;
+  constructor(codexDirectory = process.env.CODEX_HOME || join(homedir(), '.codex'), usageLimit?: ModelUsageLimit) { this.codexDirectory = codexDirectory; this.usageLimit = usageLimit; }
 
   private async credentials(): Promise<{ access: string; catalog: CatalogEntry[] }> {
     let auth;
@@ -33,8 +103,8 @@ export class SubscriptionProvider implements StudyProvider {
     try {
       auth = JSON.parse(await readFile(join(this.codexDirectory, 'auth.json'), 'utf8'));
       catalog = JSON.parse(await readFile(join(this.codexDirectory, 'models_cache.json'), 'utf8'));
-    } catch { throw new Error('Codex subscription credentials or account model catalog are unavailable. Sign in with ChatGPT in Codex and refresh its model list.'); }
-    if (auth.auth_mode !== 'chatgpt' || typeof auth.tokens?.access_token !== 'string') throw new Error('A ChatGPT subscription login is required. API keys are never used.');
+    } catch { throw new Error('Codex subscription credentials or account model catalog are unavailable. Sign in with ChatGPT in Codex and refresh its model list, or choose an API key in Settings.'); }
+    if (auth.auth_mode !== 'chatgpt' || typeof auth.tokens?.access_token !== 'string') throw new Error('Codex is not signed in with ChatGPT. This route never reads a Codex API key; choose an API key in Settings instead.');
     let claims;
     try { claims = JSON.parse(Buffer.from(auth.tokens.access_token.split('.')[1], 'base64url').toString()); }
     catch { throw new Error('Codex subscription token format is unsupported.'); }
@@ -74,55 +144,10 @@ export class SubscriptionProvider implements StudyProvider {
     // so the UI can show the reasoning; short reasoning may return none.
     const status = account.models.find(entry => entry.id === request.model)!;
     const effort = status.efforts.find(level => level === request.effort) ?? status.defaultEffort;
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    request.signal?.addEventListener('abort', abort, { once: true });
-    if (request.signal?.aborted) controller.abort();
-    const timer = setTimeout(abort, REQUEST_TIMEOUT_MS);
-    try {
-      const { access } = await this.credentials();
-      const history = (request.history ?? []).map(message => ({ role: 'user' as const, content: `Prior ${message.role} message (conversation data):\n${message.content}`, timestamp: Date.now() }));
-      const context: Context = { systemPrompt: request.systemPrompt, messages: [...history, { role: 'user', content: request.prompt, timestamp: Date.now() }], tools: request.tools };
-      let length = 0;
-      for (let step = 0; step < 6; step++) {
-      let terminal = false;
-      let continueTools = false;
-      const usage = this.usageLimit?.take();
-      if (usage && !usage.allowed) { yield { type: 'error', code: 'usage_limit', message: `AI usage limit reached: ${usage.limit} model requests per ${usage.window}. Try again after ${usage.retryAt.toLocaleString()}.` }; return; }
-      // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
-      for await (const event of codexStream(model, normalizeContext(context), { apiKey: access, signal: controller.signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) })) {
-        if (event.type === 'text_delta') {
-          length += event.delta.length;
-          if (length > MAX_REPLY_LENGTH) { controller.abort(); yield { type: 'error', code: 'output_limit', message: 'Reply exceeded the output limit.' }; return; }
-          yield { type: 'text', text: event.delta };
-        } else if (event.type === 'thinking_delta') {
-          // Reasoning summary text (the provider exposes summaries, not raw reasoning).
-          yield { type: 'thinking', text: event.delta };
-        } else if (event.type === 'error') {
-          yield { type: 'error', code: controller.signal.aborted ? 'cancelled' : 'provider_error', message: controller.signal.aborted ? 'Generation stopped.' : 'Subscription request failed. Check Codex sign-in and account availability.' };
-          return;
-        } else if (event.type === 'done') {
-          terminal = true;
-          if (event.reason === 'toolUse' && request.executeTool) {
-            context.messages.push(event.message);
-            for (const call of event.message.content.filter(block => block.type === 'toolCall').slice(0, 8)) {
-              let result: unknown; let isError = false;
-              try { result = await request.executeTool(call.name, call.arguments); } catch { result = { error: 'Tool request denied or failed.' }; isError = true; }
-              context.messages.push({ role: 'toolResult', toolCallId: call.id, toolName: call.name, content: [{ type: 'text', text: JSON.stringify(result).slice(0, 24_000) }], isError, timestamp: Date.now() });
-            }
-            continueTools = true;
-          } else if (event.reason !== 'stop') { yield { type: 'error', code: 'incomplete', message: 'Provider did not finish a complete reply.' }; return; }
-          else {
-          yield { type: 'done', model: model.id, provider: model.provider };
-          return;
-          }
-        }
-      }
-      if (!terminal) { yield { type: 'error', code: 'interrupted', message: 'Provider stream ended before completion.' }; return; }
-      if (!continueTools) return;
-      }
-      yield { type: 'error', code: 'tool_limit', message: 'Tutor reached the bounded tool-step limit.' };
-    } catch { yield { type: 'error', code: controller.signal.aborted ? 'cancelled' : 'provider_error', message: 'Subscription request could not complete. No API-key fallback was attempted.' }; }
-    finally { clearTimeout(timer); request.signal?.removeEventListener('abort', abort); }
+    let access: string;
+    try { ({ access } = await this.credentials()); } catch (error) { yield { type: 'error', code: 'setup_required', message: (error as Error).message }; return; }
+    // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
+    const call: ModelCall = (context, signal) => codexStream(model, context, { apiKey: access, signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) });
+    yield* streamWithTools(request, call, { model: model.id, provider: model.provider }, this.usageLimit, () => 'Subscription request failed. Check Codex sign-in and account availability.');
   }
 }

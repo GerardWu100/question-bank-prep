@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { calculate } from '../apps/calculator/index.js';
 import { SubscriptionProvider } from '../apps/ai-runtime/index.js';
-import { CodexUsageLimit } from '../apps/ai-runtime/usage-limit.js';
+import { ModelUsageLimit } from '../apps/ai-runtime/usage-limit.js';
 import { buildApp } from '../apps/server/src/app.js';
 
 describe('bounded Python worker', () => {
@@ -28,7 +28,7 @@ describe('subscription billing policy', () => {
       expect((await provider.status()).available).toBe(false);
       await writeFile(join(directory, 'auth.json'), JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'fake-test-value' }));
       await writeFile(join(directory, 'models_cache.json'), JSON.stringify({ fetched_at: new Date().toISOString(), models: [{ slug: 'gpt-6-luna' }] }));
-      expect((await provider.status()).reason).toContain('API keys are never used');
+      expect((await provider.status()).reason).toContain("never reads a Codex API key");
       const events = []; for await (const event of provider.stream({ model: 'gpt-6-luna', prompt: 'hello' })) events.push(event);
       expect(events).toMatchObject([{ type: 'error', code: 'setup_required' }]);
       await writeFile(join(directory, 'auth.json'), JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: `x.${Buffer.from(JSON.stringify({ exp: 1 })).toString('base64url')}.x` } }));
@@ -37,17 +37,17 @@ describe('subscription billing policy', () => {
   });
 });
 
-describe('project-wide Codex usage limit', () => {
+describe('project-wide model usage limit', () => {
   it('blocks past the hourly and daily caps and keeps the count across restarts', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'study-usage-test-'));
     try {
-      const stateFile = join(directory, 'codex-usage.json');
+      const stateFile = join(directory, 'ai-usage.json');
       const start = Date.parse('2026-10-18T12:00:00Z');
-      const limit = new CodexUsageLimit({ perHour: 2, perDay: 3 }, stateFile);
+      const limit = new ModelUsageLimit({ perHour: 2, perDay: 3 }, stateFile);
       expect(limit.take(start).allowed).toBe(true);
       expect(limit.take(start + 1000).allowed).toBe(true);
       expect(limit.take(start + 2000)).toMatchObject({ allowed: false, window: 'hour', retryAt: new Date(start + 3_600_000) });
-      const restarted = new CodexUsageLimit({ perHour: 2, perDay: 3 }, stateFile);
+      const restarted = new ModelUsageLimit({ perHour: 2, perDay: 3 }, stateFile);
       expect(restarted.take(start + 3_600_001).allowed).toBe(true);
       expect(restarted.take(start + 7_300_000)).toMatchObject({ allowed: false, window: 'day', retryAt: new Date(start + 86_400_000) });
     } finally { await rm(directory, { recursive: true }); }

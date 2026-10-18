@@ -978,3 +978,11 @@ details.deck[open] > summary {
     max-width: calc(100vw - 2rem);
   }
 }
+/* Settings → AI provider: the endpoint's model list scrolls instead of growing the page. */
+.remote-models .chips {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.ai-provider .chips button {
+  text-transform: none;
+}

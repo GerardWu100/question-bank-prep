@@ -9,6 +9,7 @@ import React, {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { AIProviderSettings } from "./AIProviderSettings";
 import { api, ApiError, operation } from "./api";
 // Markdown pulls in remark, KaTeX and its stylesheet: a separate chunk, loaded when a
 // page first shows Markdown, so the Practice home starts without it.
@@ -329,8 +330,14 @@ function App() {
     savePreference("reading", { path: readingPath, section });
     window.scrollTo({ top: 0 });
   };
-  // The tutor model is a library setting chosen on the Settings page.
-  const model = librarySettings?.settings?.model || DEFAULT_MODEL;
+  // The tutor model is a library setting chosen on the Settings page. When the AI
+  // provider no longer offers it (for example after switching to an API key), the
+  // provider's first usable model is used until another is chosen.
+  const savedModel = librarySettings?.settings?.model;
+  const usableModels: any[] = settings?.models?.filter((m: any) => m.enabled) ?? [];
+  const model = usableModels.some((m) => m.id === savedModel)
+    ? savedModel
+    : (usableModels[0]?.id ?? savedModel ?? DEFAULT_MODEL);
   const latestQuestion = useRef<any>(null),
     queue = useRef(Promise.resolve()),
     routeReady = useRef(false),
@@ -1301,8 +1308,9 @@ function App() {
               })}
               {overview.catalog && !overview.counts.total && (
                 <p className="muted">
-                  No questions yet. Set MATERIAL_ROOT to your question-bank
-                  folder.
+                  No questions yet. Choose a question-bank folder (desktop
+                  app: File → Question-bank folder; server: MATERIAL_ROOT), or
+                  import a Markdown bank on Materials.
                 </p>
               )}
               <details className="panel practice-custom">
@@ -2087,8 +2095,47 @@ function App() {
                   <a href={`/api${scope}/export/progress`} download>
                     Progress (CSV)
                   </a>
+                  <a href={`/api${scope}/export/study-data`} download>
+                    Study data (JSON, for import)
+                  </a>
                 </div>
               </section>
+              <section className="panel">
+                <h2>Import study data</h2>
+                <label>
+                  Study data (JSON) or progress (CSV) exported from this app
+                  <input
+                    type="file"
+                    accept=".json,.csv,application/json,text/csv"
+                    disabled={busy}
+                    onChange={(e) => {
+                      const input = e.target;
+                      void run(async () => {
+                        const selected = input.files?.[0];
+                        if (!selected) return;
+                        const result = await api(`${scope}/import/study-data`, {
+                          operationId: operation(),
+                          content: await selected.text(),
+                        });
+                        input.value = "";
+                        await refresh();
+                        setSaveStatus(
+                          `Imported ${result.answers} answers, ${result.annotations} flags or question notes, ${result.notes} notes; ${result.unchanged} already the same` +
+                            (result.unmatched.length
+                              ? `; ${result.unmatched.length} not found in this library (import that bank first): ${result.unmatched.slice(0, 5).join(", ")}${result.unmatched.length > 5 ? " …" : ""}`
+                              : ""),
+                        );
+                      });
+                    }}
+                  />
+                </label>
+                {saveStatus.startsWith("Imported") && (
+                  <p className="muted">{saveStatus}</p>
+                )}
+              </section>
+              <AIProviderSettings
+                onSaved={() => void api("/models").then(setSettings)}
+              />
               <section className="panel">
                 <h2>AI model</h2>
                 {settings?.reason && <p className="muted">{settings.reason}</p>}

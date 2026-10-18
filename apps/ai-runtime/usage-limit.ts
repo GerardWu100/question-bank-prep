@@ -13,13 +13,14 @@ export interface UsageLimits {
 export type UsageDecision = { allowed: true } | { allowed: false; window: 'hour' | 'day'; limit: number; retryAt: Date };
 
 /**
- * Project-wide cap on Codex model requests, so a leaked login or a broken loop cannot
- * drain the ChatGPT subscription. One tutor reply is one request plus one per tool round.
+ * Project-wide cap on model requests (Codex subscription or API key), so a leaked login
+ * or a broken loop cannot drain the subscription or the API budget. One tutor reply is
+ * one request plus one per tool round.
  *
  * State is a JSON file `{ "requests": [epochMs, ...] }` holding the request times of the
  * last 24 hours, oldest first, so a restart does not reset the count.
  */
-export class CodexUsageLimit {
+export class ModelUsageLimit {
   private requests: number[] = [];
 
   constructor(private readonly limits: UsageLimits, private readonly stateFile?: string) {

@@ -1,5 +1,6 @@
 import { registerAIRoutes } from "./ai-routes.js";
 import { registerFocusRoutes } from "./focus-routes.js";
+import { registerStudyDataRoutes } from "./study-data-routes.js";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
@@ -637,8 +638,9 @@ export async function buildApp(
     }),
   );
   registerAIRoutes(app, store, options);
-  // Two separate downloads: notes as Markdown, study progress as CSV. A full backup of
-  // everything is `npm run backup` (README "Back up and restore").
+  // Readable downloads: notes as Markdown, study progress as CSV. The importable
+  // study-data JSON is in study-data-routes.ts; a full backup of everything is
+  // `npm run backup` (README "Back up and restore").
   app.get(base + "/export/notes", async (request: any, reply) => {
     const origin = request.query.origin === "ai" ? "ai" : "mine";
     const notes = store
@@ -689,6 +691,7 @@ export async function buildApp(
       ...rows,
     ].join("\n");
   });
+  registerStudyDataRoutes(app, store);
   registerFocusRoutes(app, store, options.provider);
   return { app, store };
 }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Type } from '@earendil-works/pi-ai';
 import { AppError, id, questionContent, Store } from './store.js';
 import type { StudyProvider } from '../../ai-runtime/index.js';
+import { ConfigurableProvider } from '../../ai-runtime/api-key.js';
 import { listReadingFilesWithSizes, readReadingLines, runRipgrep, searchReading } from './reading-routes.js';
 import { questionStatus } from '../../../packages/domain/src/index.js';
 import { execFileSync } from 'node:child_process';
@@ -79,7 +80,20 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
       store.put(libraryId, 'chat', chat);
     }
   app.addHook('onClose', async () => { for (const controller of active.values()) controller.abort(); await Promise.allSettled(work); });
-  app.get('/api/models', async () => options.provider ? options.provider.status() : { models: [], available: false, reason: 'Subscription provider is not configured.' });
+  app.get('/api/models', async () => options.provider ? options.provider.status() : { models: [], available: false, reason: 'No AI provider is configured.' });
+  // AI provider settings (route, endpoint, key, model list) are app-wide, not per library.
+  const configurable = options.provider instanceof ConfigurableProvider ? options.provider : undefined;
+  if (configurable) {
+    app.get('/api/ai-settings', async () => configurable.settingsFile.publicView());
+    app.put('/api/ai-settings', async (request: any) => {
+      try { return configurable.settingsFile.update(request.body ?? {}); }
+      catch (error) { throw new AppError(400, 'INVALID_AI_SETTINGS', (error as Error).message); }
+    });
+    app.get('/api/ai-settings/remote-models', async () => {
+      try { return { models: await configurable.apiKey.remoteModels() }; }
+      catch (error) { throw new AppError(502, 'MODEL_LIST_FAILED', `Could not load the endpoint's models: ${(error as Error).message}`); }
+    });
+  }
   // Chat lists and lookups skip messages, which hold every reply ever streamed.
   const chatSummaries = (libraryId: string) => store.list(libraryId, 'chat', ['messages']);
   app.get(base + '/chats', async (request: any) => ({ chats: chatSummaries(request.params.libraryId) }));
@@ -205,12 +219,12 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
       const persist = () => store.db.transaction(() => {
         const saved = store.get(libraryId, chat.id, 'chat');
         const message = saved.messages.find((message: any) => message.id === run.id);
-        Object.assign(message, { content: output, markdown: output, reasoning, status, error, model: run.model, provider: 'openai-codex', sources: [...sources.values()], tools: toolSummaries, policyVersion: 1 });
+        Object.assign(message, { content: output, markdown: output, reasoning, status, error, model: run.model, provider: run.provider, sources: [...sources.values()], tools: toolSummaries, policyVersion: 1 });
         store.put(libraryId, 'chat', saved);
         store.put(libraryId, 'run', { ...run, started: true, status, error, sources: [...sources.values()], tools: toolSummaries });
       })();
       try {
-        if (!options.provider) throw new Error('Subscription provider is unavailable. No API-key fallback is used.');
+        if (!options.provider) throw new Error('No AI provider is configured.');
         const history = chat.messages.slice(0, -2).filter((message: any) => message.status === 'completed' && (!hint || message.mode === 'hint' && message.setId === body.setId)).slice(-MAX_HISTORY_MESSAGES).map((message: any) => ({ role: message.role, content: message.content.slice(0, 4000) }));
         const context = current ? safeQuestion(current) : null;
         // A reading chat sends the open section's text; it is study data, never instructions.

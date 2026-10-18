@@ -55,3 +55,6 @@ playwright-report/
 materials/
 md_materials/
 question_bank/
+
+# Desktop app build output (apps/desktop/build is covered by build/ above).
+apps/desktop/release/

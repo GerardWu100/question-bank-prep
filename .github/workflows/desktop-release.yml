@@ -1,0 +1,86 @@
+# Build the desktop app (Electron) for Linux, macOS and Windows and attach the installers
+# to a GitHub Release. Pushing git tag v1.2.3 makes release "v1.2.3"; the Docker image
+# workflow publishes the same tag. "Run workflow" builds the installers as downloadable
+# workflow artifacts without making a release.
+#
+# Files per release (x64 = Intel/AMD, arm64 = Apple silicon / ARM):
+#   Linux    Question-Bank-Prep-<version>-linux-<arch>.AppImage and .deb
+#   macOS    Question-Bank-Prep-<version>-mac-<arch>.dmg (unsigned)
+#   Windows  Question-Bank-Prep-<version>-win-<arch>.exe installer (unsigned)
+# better-sqlite3 ships prebuilt Node-API binaries for every platform, so each runner can
+# build both architectures without compiling anything.
+name: Desktop release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/tests.yml
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: --linux
+          - os: macos-latest
+            platform: --mac
+          - os: windows-latest
+            platform: --win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/desktop/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:desktop
+      - run: npm ci
+        working-directory: apps/desktop
+      # Version comes from the tag (v1.2.3 -> 1.2.3) so installers match the release.
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+        shell: bash
+        working-directory: apps/desktop
+      - run: npx electron-builder ${{ matrix.platform }} --x64 --arm64 --publish never
+        working-directory: apps/desktop
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ runner.os }}
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Create the release with the installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" installers/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Question Bank Prep $GITHUB_REF_NAME" \
+            --generate-notes
