@@ -1,6 +1,86 @@
 # Question Bank Prep
 
-A local, single-user study application for prepared Markdown question banks. Practice is independent of the AI provider. Answers, frozen review sets, annotations, imported sources, revisions, chats and review items live in SQLite.
+**A self-hosted practice app for the CFA® exam and other multiple-choice exams, with an AI tutor built in.** Keep your question banks as plain Markdown, practise them by topic and chapter, see exactly where you lose marks, and get hints, explanations and a study review from an AI tutor that reads and cites your own notes.
+
+[![Tests](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml/badge.svg)](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml)
+[![Docker image](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/GerardWu100/question-bank-prep/pkgs/container/question-bank-prep)
+![Platforms](https://img.shields.io/badge/platforms-amd64%20%7C%20arm64-555)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/practice-dark.png">
+  <img src="docs/images/practice-light.png" alt="Practice page: progress by topic and chapter, with Mistakes and Unsure sets">
+</picture>
+
+## Why
+
+Commercial question banks lock your answers inside their site, and generic flashcard apps do not understand item sets, exhibits or formulas. This app keeps the questions in files you own and the study record on your own machine:
+
+- **Practice by topic and chapter.** Every chapter shows a progress bar (green correct, amber unsure, red wrong), accuracy, and one-click **Mistakes**, **Unsure** and **★ Flagged** sets. **Resume last session** returns to the exact question you left.
+- **Real exam formats.** Standalone questions and CFA-style item sets: a case passage with exhibits and tables, followed by its questions. Formulas render with KaTeX; diagrams with Mermaid.
+- **Confidence, not just right or wrong.** Mark an answer *unsure*, and a lucky guess goes to the Unsure set instead of hiding among correct answers.
+- **Your bank stays plain Markdown.** Point the app at a folder; it syncs every time you open it and keeps your answer history when a file is edited or re-extracted.
+- **Read your notes beside the questions.** The Materials page shows your study notes (Markdown, math, images), one section at a time.
+- **An AI tutor beside every question and note section.** See [AI features](#ai-features) below.
+- **Self-hosted and private.** One Docker image for PCs, servers and Raspberry Pi; one SQLite file holds every answer, note and chat. Practice works without the AI.
+
+<p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/question-dark.png">
+  <img src="docs/images/question-light.png" alt="A case question after answering: correct choice, key and worked solution" width="49%">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/reader-dark.png">
+  <img src="docs/images/reader-light.png" alt="Materials page: a study note with formulas and a symbol table" width="49%">
+</picture>
+</p>
+
+## AI features
+
+The tutor sits under each practice question, beside each section of your notes, and on its own **Ask AI** page.
+
+| Feature | What it does |
+|---|---|
+| **Hint** | Before you answer: one hint at a time, and the tutor cannot see or reveal the key or solution |
+| **Explain** | After you answer: the concept tested, why the key is right, why each other choice is wrong, starting with the one you picked |
+| **Explain this section** | On the Materials page: the section in plain language, every symbol in each formula, and a worked example with numbers |
+| **Review my study** | Reads your results by chapter, your mistakes, the questions you asked and your notes; names your weak concepts and the next three chapters to practise |
+| **Cites your notes** | Searches your study notes (ripgrep, file list, line reader; read only) and ends each answer with the file and section it used |
+| **Calculator** | Works numbers out in a bounded Python calculator instead of mental arithmetic |
+| **Saved conversations** | Each question and note section keeps its own chat; **History** lists them all, and any reply can be saved as an AI note |
+| **AI answer keys** | Prompt 3 fills keys a source left out, marked `Answer (AI)` in the file, and never overwrites a source key |
+
+It runs on the ChatGPT subscription you already have: the app reads the existing Codex login, so there is no API key and no per-token bill. Pick any model your account offers, and its thinking level, in Settings. Only the current question or note section, the recent messages of that chat, and what the tutor looks up are sent. Practice works fully without AI.
+
+## How a bank is built
+
+Three ready-made prompts, for any exam, turn study PDFs into a bank (see [Building a question bank](#building-a-question-bank-three-prompts)):
+
+```mermaid
+flowchart LR
+  A[Study PDFs] -->|prompt 1| B[Markdown notes]
+  B -->|prompt 2| C[Question bank<br/>one file per source and topic]
+  C -->|prompt 3| D[Deduplicated bank<br/>missing keys filled]
+  B --> E[Materials page]
+  D --> F[Practice page]
+```
+
+A question is ordinary Markdown ([format guide](docs/user/question-format.md)):
+
+```markdown
+## Question 1
+What is the present value of \$500 received in 2 years at 5%?
+
+### Choices
+A. \$453.51
+B. \$476.19
+C. \$551.25
+
+### Answer
+A
+
+### Solution
+$PV = 500 / 1.05^2 = 453.51$.
+```
 
 ## Run with Docker
 
@@ -159,3 +239,7 @@ npm run test:e2e
 ```
 
 Tests use synthetic material and the files in `examples/`, not a proprietary bank. Browser tests use the production build on port 3100, a fresh temporary database, and bundled reading fixtures; they refuse to reuse a running server. Run the build first. The default `npm run test:e2e` runs each spec file with a fresh server so cumulative test traffic does not exhaust the production request limit. To run one focused selection, use `npm run test:e2e -- tests/e2e/resume.spec.ts`; explicit arguments are passed to one Playwright invocation. See [GUIDE_ROOT.md](GUIDE_ROOT.md) for architecture, known limits and acceptance evidence.
+
+## License and trademarks
+
+All rights reserved; see [LICENSE](LICENSE). CFA® and Chartered Financial Analyst® are trademarks owned by CFA Institute. This project is not affiliated with or endorsed by CFA Institute, and it ships no exam questions: the screenshots use an original demo bank.

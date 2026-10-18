@@ -777,7 +777,8 @@ pre {
 }
 .deck-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(4rem, 12rem) 6.5rem 15rem;
+  /* The actions column fits Start/Continue, Mistakes and Unsure side by side. */
+  grid-template-columns: minmax(0, 1fr) minmax(4rem, 12rem) 6.5rem 19rem;
   align-items: center;
   gap: 0.3rem 0.75rem;
   padding: 0.3rem 0 0.3rem 0.8rem;
@@ -817,6 +818,7 @@ pre {
 }
 .deck-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   justify-content: flex-start;
 }
