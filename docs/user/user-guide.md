@@ -32,6 +32,8 @@ flowchart LR
 3. Open it and click **Create library**.
 4. **File → Question-bank folder…**: pick your `question_bank` folder. **File → Study-notes folder…**: pick your notes folder. The app restarts and loads them.
 
+**Desktop app on your server's data.** If you run the Docker server below, choose **File → Connect to a server…** in the desktop app and enter the server's address. Questions, notes and progress then all come from the server; sign in with its password. **File → Use this computer (local data)** switches back.
+
 **Server with Docker (reach it from any device, with a password).**
 
 1. Make an empty folder. Save [docker-compose.example.yml](../../docker-compose.example.yml) in it as `docker-compose.yml`.
@@ -52,12 +54,12 @@ To update later: `docker compose pull && docker compose up -d`. Your answers, ch
 
 | Page | What you do there |
 |---|---|
-| **Practice** | Pick a topic and chapter, then **Start**, **Continue** or **Review**. After an answer, mark it *unsure* if you guessed. **Mistakes**, **Unsure** and **★ Flagged** build review sets. **Resume last session** goes back to the exact question you left. |
-| **Materials** | Read your study notes one section at a time. **Ask AI about this section** explains it. |
+| **Practice** | Pick a topic and chapter, then **Start**, **Continue** or **Review**. Mark an answer *unsure* if you guessed. **★ Flagged**, **✗ Mistakes** and **? Unsure** at the top review those questions from every source. **Resume last session** goes back to the exact question you left. On a question, Previous and Next stay at the top. |
+| **Materials** | Read your study notes one section at a time. **Ask AI about this section** explains it. **↑ Top** jumps back up. |
 | **Ask AI** | Free questions to the tutor, and **Review my study**: your weak concepts and the next three chapters to practise. |
-| **Notes** | Your own notes and saved tutor replies. |
+| **Notes** | Your own notes and saved tutor replies, each with **Delete**. The AI notes tab has a chat box; **Continue this chat** reopens the conversation a note came from. |
 | **History** | Every tutor conversation. |
-| **Settings** | AI provider (Codex login or API key), tutor model and thinking level, folder sync, export (notes as Markdown, study progress as JSON) and **Import study progress**. |
+| **Settings** | Export and **Import study progress**, Display (text size, theme), Practice (show the answer on click), AI provider (Codex login or API key), tutor model and thinking level, and folder sync. |
 
 The app reads your question folder again each time you open it, and keeps your answer history when a file changes. Without a configured folder, use **Materials → Import Markdown → Choose a folder** (a whole bank) or **Choose a file** (one bank file).
 

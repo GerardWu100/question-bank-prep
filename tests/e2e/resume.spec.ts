@@ -34,21 +34,21 @@ test("Resume keeps the last visited set and exact answered question after reload
   await page.getByRole("button", { name: "Start", exact: true }).first().click();
   await expect(page.getByText("Resume fixture question 1", { exact: true })).toBeVisible();
   const firstSetURL = page.url();
-  await page.getByRole("button", { name: "← Practice" }).click();
+  await page.getByRole("navigation").getByRole("button", { name: "Practice", exact: true }).click();
 
   // Create a newer set, then revisit the earlier set: creation order is not recency.
   await page.getByText("Custom practice set", { exact: true }).click();
   await page.getByPlaceholder("Search your library").fill("Resume fixture question 3");
   await page.getByRole("button", { name: "Start practice · 1 questions", exact: true }).click();
   await expect(page.getByText("Resume fixture question 3", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "← Practice" }).click();
+  await page.getByRole("navigation").getByRole("button", { name: "Practice", exact: true }).click();
   await page.getByRole("button", { name: "Start", exact: true }).first().click();
   await expect(page).toHaveURL(firstSetURL);
   await page.getByRole("button", { name: "Question 2", exact: true }).click();
   await page.getByRole("button", { name: "A One", exact: true }).click();
   await page.getByRole("button", { name: "Submit answer", exact: true }).click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "← Practice" }).click();
+  await page.getByRole("navigation").getByRole("button", { name: "Practice", exact: true }).click();
   await page.reload();
   const picker = page.getByLabel("Library", { exact: true });
   if (await picker.count()) await expect(picker).toHaveValue(library.id);
@@ -66,7 +66,7 @@ test("Resume is library-specific and ignores a missing saved set", async ({ page
   const { library } = await practiceLibrary(page, request);
   await page.getByRole("button", { name: "Start", exact: true }).first().click();
   await expect(page.getByText("Resume fixture question 1", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "← Practice" }).click();
+  await page.getByRole("navigation").getByRole("button", { name: "Practice", exact: true }).click();
   const response = await request.post("/api/libraries", {
     data: { name: "No session yet" },
   });

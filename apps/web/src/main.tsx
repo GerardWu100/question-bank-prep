@@ -22,9 +22,9 @@ import "./style.css";
 
 const pages = [
   "Practice",
+  "Materials",
   "Ask AI",
   "Notes",
-  "Materials",
   "History",
   "Settings",
 ] as const;
@@ -192,6 +192,25 @@ function LazyDetails({
     </details>
   );
 }
+/** A floating "Top" button, shown once the page is scrolled past one screen. */
+function BackToTop() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setVisible(window.scrollY > window.innerHeight);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return visible ? (
+    <button
+      className="back-to-top"
+      aria-label="Back to top"
+      onClick={() => window.scrollTo(0, 0)}
+    >
+      ↑ Top
+    </button>
+  ) : null;
+}
 /** "Chapter LM01 Basics…" -> "LM01 Basics…". */
 const chapterLabel = (chapter: string) => chapter.replace(/^Chapter\s+/i, "");
 /** Sum catalog rows (topic/source/chapter progress) into one deck summary. */
@@ -276,12 +295,16 @@ function App() {
     [source, setSource] = useState(""),
     [chapter, setChapter] = useState(""),
     [noteDraft, setNoteDraft] = useState<any>(null),
-    [notesView, setNotesView] = useState<"mine" | "ai">("mine");
+    [notesView, setNotesView] = useState<"mine" | "ai">("mine"),
+    // Settings → Practice: picking a choice saves it and shows the answer at once.
+    [answerOnClick, setAnswerOnClick] = useState(() =>
+      loadPreference("answerOnClick", false),
+    );
   const [importPreview, setImportPreview] = useState<any>(null),
     // Markdown files picked for import: one file, or every .md file in a folder.
-    [importFiles, setImportFiles] = useState<{ path: string; content: string }[]>(
-      [],
-    ),
+    [importFiles, setImportFiles] = useState<
+      { path: string; content: string }[]
+    >([]),
     [chats, setChats] = useState<any[]>([]),
     [chat, setChat] = useState<any>(null),
     [prompt, setPrompt] = useState(""),
@@ -320,6 +343,10 @@ function App() {
     document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
     savePreference("fontSize", fontSize);
   }, [fontSize]);
+  useEffect(
+    () => savePreference("answerOnClick", answerOnClick),
+    [answerOnClick],
+  );
   useEffect(() => {
     if (theme === "system") delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = theme;
@@ -364,7 +391,8 @@ function App() {
   // provider no longer offers it (for example after switching to an API key), the
   // provider's first usable model is used until another is chosen.
   const savedModel = librarySettings?.settings?.model;
-  const usableModels: any[] = settings?.models?.filter((m: any) => m.enabled) ?? [];
+  const usableModels: any[] =
+    settings?.models?.filter((m: any) => m.enabled) ?? [];
   const model = usableModels.some((m) => m.id === savedModel)
     ? savedModel
     : (usableModels[0]?.id ?? savedModel ?? DEFAULT_MODEL);
@@ -492,6 +520,19 @@ function App() {
         ]);
     });
   }, [page, library]);
+  // Notes starts its own conversation; returning to a question shows that question's chat.
+  useEffect(() => {
+    if (!library) return;
+    if (page === "Notes" && (chat?.questionId || chat?.readingPath))
+      setChat(null);
+    if (page === "Practice" && question && chat?.questionId !== question.id)
+      void run(async () => {
+        const prior = (await api(`${scope}/chats`)).chats.find(
+          (c: any) => c.questionId === question.id,
+        );
+        setChat(prior ? await api(chatUrl(prior)) : null);
+      });
+  }, [page]);
   const loadQuestion = async (set: any, index: number) => {
     const q = await api(
       `${scope}/questions/${set.questionIds[index]}?setId=${set.id}`,
@@ -680,9 +721,9 @@ function App() {
       chapter: deck.chapter ?? "",
       statuses: review === "wrong" || review === "unsure" ? [review] : [],
       flagged: review === "flagged",
-      // Starred questions were picked by hand, so the Flagged set spans every source,
-      // matching the count on its button, even when a source is switched off.
-      sources: review === "flagged" ? [] : activeSources,
+      // The top Flagged, Mistakes and Unsure sets (no topic) span every source, matching
+      // the counts on their buttons, even when a source is switched off.
+      sources: review && !deck.topic ? [] : activeSources,
     };
     const existing =
       !review &&
@@ -1078,59 +1119,23 @@ function App() {
   );
   return (
     <>
-      <header>
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setPage("Practice");
-          }}
-        >
-          ▦ <span>Study Ledger</span>
-        </a>
-        <div className="header-tools">
+      <nav aria-label="Main navigation">
+        {pages.map((p) => (
           <button
-            className="quiet"
-            aria-label="Smaller text"
-            disabled={fontSize <= FONT_SIZES[0]}
-            onClick={() =>
-              setFontSize(
-                [...FONT_SIZES].reverse().find((size) => size < fontSize) ??
-                  FONT_SIZES[0],
-              )
-            }
+            className={page === p ? "active" : ""}
+            key={p}
+            onClick={() => {
+              // Practice again while a question is open: back to the topic list.
+              if (p === "Practice" && page === "Practice") {
+                setQuestion(null);
+                setActiveSet(null);
+              }
+              setPage(p);
+            }}
           >
-            A−
+            {p}
           </button>
-          <button
-            className="quiet"
-            aria-label="Larger text"
-            disabled={fontSize >= FONT_SIZES[FONT_SIZES.length - 1]}
-            onClick={() =>
-              setFontSize(
-                FONT_SIZES.find((size) => size > fontSize) ??
-                  FONT_SIZES[FONT_SIZES.length - 1],
-              )
-            }
-          >
-            A+
-          </button>
-          <button
-            className="quiet"
-            aria-label={`Theme: ${theme}`}
-            title="Switch theme: system, light, dark"
-            onClick={() =>
-              setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length])
-            }
-          >
-            {theme === "dark"
-              ? "☾ Dark"
-              : theme === "light"
-                ? "☀ Light"
-                : "◐ Auto"}
-          </button>
-        </div>
+        ))}
         {libraries.length > 1 && (
           <select
             aria-label="Library"
@@ -1149,17 +1154,6 @@ function App() {
             ))}
           </select>
         )}
-      </header>
-      <nav aria-label="Main navigation">
-        {pages.map((p) => (
-          <button
-            className={page === p ? "active" : ""}
-            key={p}
-            onClick={() => setPage(p)}
-          >
-            {p}
-          </button>
-        ))}
       </nav>
       <main>
         {/* Markdown loads as its own chunk; until then its places stay empty. */}
@@ -1257,17 +1251,33 @@ function App() {
                       ★ Flagged {sumRows(overview.catalog ?? []).flagged}
                     </button>
                   )}
+                  {(
+                    [
+                      ["wrong", "✗ Mistakes"],
+                      ["unsure", "? Unsure"],
+                    ] as const
+                  ).map(
+                    ([review, label]) =>
+                      (overview.counts[review] || 0) > 0 && (
+                        <button
+                          key={review}
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(() =>
+                              openDeck(
+                                { topic: "" },
+                                overview.counts[review],
+                                review,
+                              ),
+                            )
+                          }
+                        >
+                          {label} {overview.counts[review]}
+                        </button>
+                      ),
+                  )}
                 </div>
-              </div>
-              <div className="stats">
-                {(["unanswered", "correct", "unsure", "wrong"] as const).map(
-                  (key) => (
-                    <div key={key}>
-                      <strong>{overview.counts[key] || 0}</strong>
-                      <span>{key}</span>
-                    </div>
-                  ),
-                )}
               </div>
               {allSources.length > 1 && (
                 <div
@@ -1338,9 +1348,9 @@ function App() {
               })}
               {overview.catalog && !overview.counts.total && (
                 <p className="muted">
-                  No questions yet. Choose a question-bank folder (desktop
-                  app: File → Question-bank folder; server: MATERIAL_ROOT), or
-                  import a Markdown bank on Materials.
+                  No questions yet. Choose a question-bank folder (desktop app:
+                  File → Question-bank folder; server: MATERIAL_ROOT), or import
+                  a Markdown bank on Materials.
                 </p>
               )}
               <details className="panel practice-custom">
@@ -1463,35 +1473,56 @@ function App() {
                   Start practice · {eligibleCount} questions
                 </button>
               </details>
+              <div className="stats">
+                {(["unanswered", "correct", "unsure", "wrong"] as const).map(
+                  (key) => (
+                    <div key={key}>
+                      <strong>{overview.counts[key] || 0}</strong>
+                      <span>{key}</span>
+                    </div>
+                  ),
+                )}
+              </div>
             </>
           )}
           {library && page === "Practice" && question && (
             <>
-              <button
-                className="quiet"
-                onClick={() => {
-                  setQuestion(null);
-                  setActiveSet(null);
-                }}
-              >
-                ← Practice
-              </button>
-              <div className="row">
-                <span className="eyebrow">{activeSet.title}</span>
-                <span>
+              {/* Stays at the top while scrolling, so Next is never a scroll away. */}
+              <div className="question-nav">
+                <button
+                  className="secondary"
+                  disabled={position === 0 || busy}
+                  onClick={() => void run(() => navigate(position - 1))}
+                >
+                  ← Previous
+                </button>
+                <span className="muted">
                   {position + 1} / {activeSet.questionIds.length}
                 </span>
+                <span className="question-nav-end">
+                  {question.answerKey &&
+                    draft &&
+                    submitted &&
+                    draft !== question.answerKey && (
+                      // A slip of the finger should not land in Mistakes.
+                      <button
+                        className="quiet small"
+                        disabled={busy}
+                        onClick={() => answer(question.answerKey, "sure")}
+                      >
+                        Misclicked
+                      </button>
+                    )}
+                  <button
+                    disabled={
+                      position === activeSet.questionIds.length - 1 || busy
+                    }
+                    onClick={() => void run(() => navigate(position + 1))}
+                  >
+                    Next →
+                  </button>
+                </span>
               </div>
-              <progress
-                value={position + 1}
-                max={activeSet.questionIds.length}
-              />
-              <QuestionStrip
-                questionIds={activeSet.questionIds}
-                statuses={activeSet.itemStatuses}
-                position={position}
-                onPick={pickQuestion}
-              />
               <section className="panel question">
                 <div className="row">
                   <span className="muted">
@@ -1536,7 +1567,7 @@ function App() {
                           className={`choice ${draft === choice.label ? "chosen" : ""}`}
                           aria-pressed={draft === choice.label}
                           onClick={() =>
-                            submitted
+                            submitted || answerOnClick
                               ? answer(choice.label)
                               : setDraft(choice.label)
                           }
@@ -1546,35 +1577,38 @@ function App() {
                         </button>
                       ))}
                     </div>
-                    {(!submitted || question.setState.status !== "wrong") && (
-                      <fieldset>
-                        <legend>Confidence</legend>
-                        {["sure", "unsure"].map((c) => (
-                          <label className="check" key={c}>
-                            <input
-                              type="radio"
-                              name="confidence"
-                              checked={confidence === c}
-                              onChange={() =>
-                                submitted ? answer(draft, c) : setConfidence(c)
-                              }
-                            />
-                            {c === "sure" ? "Sure" : "Unsure"}
-                          </label>
-                        ))}
-                      </fieldset>
-                    )}
-                    {!submitted && (
-                      <button
-                        disabled={!draft || busy}
-                        onClick={() => answer(draft)}
-                      >
-                        Submit answer
-                      </button>
-                    )}
-                    <span role="status" className="save-status">
-                      {saveStatus}
-                    </span>
+                    <div className="answer-row">
+                      {(!submitted || question.setState.status !== "wrong") && (
+                        <span role="radiogroup" aria-label="Confidence">
+                          {["sure", "unsure"].map((c) => (
+                            <label className="check" key={c}>
+                              <input
+                                type="radio"
+                                name="confidence"
+                                checked={confidence === c}
+                                onChange={() =>
+                                  submitted
+                                    ? answer(draft, c)
+                                    : setConfidence(c)
+                                }
+                              />
+                              {c === "sure" ? "Sure" : "Unsure"}
+                            </label>
+                          ))}
+                        </span>
+                      )}
+                      {!submitted && !answerOnClick && (
+                        <button
+                          disabled={!draft || busy}
+                          onClick={() => answer(draft)}
+                        >
+                          Submit answer
+                        </button>
+                      )}
+                      <span role="status" className="save-status">
+                        {saveStatus}
+                      </span>
+                    </div>
                     {submitted && (
                       <div className={`result ${question.setState.status}`}>
                         <strong>{question.setState.status}</strong>
@@ -1608,33 +1642,27 @@ function App() {
                   </>
                 )}
               </section>
-              <div className="row">
+              {/* Where you are in the set, kept below the question so it does not distract. */}
+              <div className="set-progress">
+                <span className="eyebrow">{activeSet.title}</span>
+                <progress
+                  value={position + 1}
+                  max={activeSet.questionIds.length}
+                />
+                <QuestionStrip
+                  questionIds={activeSet.questionIds}
+                  statuses={activeSet.itemStatuses}
+                  position={position}
+                  onPick={pickQuestion}
+                />
                 <button
                   className="secondary"
-                  disabled={position === 0 || busy}
-                  onClick={() => void run(() => navigate(position - 1))}
+                  onClick={() => {
+                    setQuestion(null);
+                    setActiveSet(null);
+                  }}
                 >
-                  ← Previous
-                </button>
-                {question.answerKey &&
-                  draft &&
-                  draft !== question.answerKey && (
-                    // A slip of the finger should not land in Mistakes.
-                    <button
-                      className="quiet small"
-                      disabled={busy}
-                      onClick={() => answer(question.answerKey, "sure")}
-                    >
-                      Misclicked
-                    </button>
-                  )}
-                <button
-                  disabled={
-                    position === activeSet.questionIds.length - 1 || busy
-                  }
-                  onClick={() => void run(() => navigate(position + 1))}
-                >
-                  Next →
+                  ← Back to Practice
                 </button>
               </div>
               <section className="panel tutor-inline">
@@ -1767,7 +1795,9 @@ function App() {
                         onChange={(e) => {
                           const input = e.target;
                           void run(async () => {
-                            setImportFiles(await readMarkdownFiles(input.files));
+                            setImportFiles(
+                              await readMarkdownFiles(input.files),
+                            );
                             input.value = "";
                             showImportPreview(null);
                           });
@@ -1782,7 +1812,9 @@ function App() {
                         onChange={(e) => {
                           const input = e.target;
                           void run(async () => {
-                            setImportFiles(await readMarkdownFiles(input.files));
+                            setImportFiles(
+                              await readMarkdownFiles(input.files),
+                            );
                             input.value = "";
                             showImportPreview(null);
                           });
@@ -1998,6 +2030,17 @@ function App() {
                   </div>
                 </section>
               )}
+              {notesView === "ai" && (
+                <section className="panel tutor-inline" id="notes-chat">
+                  <div className="row">
+                    <h2>Ask AI</h2>
+                    <button className="secondary" onClick={() => setChat(null)}>
+                      New conversation
+                    </button>
+                  </div>
+                  {tutorConversation}
+                </section>
+              )}
               {notes.some(
                 (n) => (n.provenance === "ai") === (notesView === "ai"),
               ) ? (
@@ -2009,7 +2052,35 @@ function App() {
                     <LazyDetails
                       className="panel note-card"
                       key={n.id}
-                      summary={n.title}
+                      summary={
+                        <>
+                          <span>{n.title}</span>
+                          <button
+                            className="quiet small note-delete"
+                            disabled={busy}
+                            onClick={(event) => {
+                              // A button inside <summary> must not also fold the card.
+                              event.preventDefault();
+                              if (
+                                !window.confirm(
+                                  `Delete "${n.title}"? This cannot be undone.`,
+                                )
+                              )
+                                return;
+                              void run(async () => {
+                                await api(
+                                  `${scope}/notes/${n.id}`,
+                                  {},
+                                  "DELETE",
+                                );
+                                setNotes((await api(`${scope}/notes`)).notes);
+                              });
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      }
                     >
                       {() => (
                         <>
@@ -2023,28 +2094,24 @@ function App() {
                                 Edit
                               </button>
                             )}
-                            <button
-                              className="quiet"
-                              disabled={busy}
-                              onClick={() => {
-                                if (
-                                  !window.confirm(
-                                    `Delete "${n.title}"? This cannot be undone.`,
-                                  )
-                                )
-                                  return;
-                                void run(async () => {
-                                  await api(
-                                    `${scope}/notes/${n.id}`,
-                                    {},
-                                    "DELETE",
-                                  );
-                                  setNotes((await api(`${scope}/notes`)).notes);
-                                });
-                              }}
-                            >
-                              Delete
-                            </button>
+                            {n.provenance === "ai" && n.chatId && (
+                              <button
+                                className="quiet"
+                                disabled={busy}
+                                onClick={() =>
+                                  void run(async () => {
+                                    setChat(
+                                      await api(`${scope}/chats/${n.chatId}`),
+                                    );
+                                    document
+                                      .getElementById("notes-chat")
+                                      ?.scrollIntoView({ behavior: "smooth" });
+                                  })
+                                }
+                              >
+                                Continue this chat
+                              </button>
+                            )}
                           </div>
                         </>
                       )}
@@ -2163,6 +2230,67 @@ function App() {
                   <p className="muted">{saveStatus}</p>
                 )}
               </section>
+              <section className="panel">
+                <h2>Display</h2>
+                <div className="chips display-tools">
+                  <span className="muted">Text size</span>
+                  <button
+                    className="secondary"
+                    aria-label="Smaller text"
+                    disabled={fontSize <= FONT_SIZES[0]}
+                    onClick={() =>
+                      setFontSize(
+                        [...FONT_SIZES]
+                          .reverse()
+                          .find((size) => size < fontSize) ?? FONT_SIZES[0],
+                      )
+                    }
+                  >
+                    A−
+                  </button>
+                  <button
+                    className="secondary"
+                    aria-label="Larger text"
+                    disabled={fontSize >= FONT_SIZES[FONT_SIZES.length - 1]}
+                    onClick={() =>
+                      setFontSize(
+                        FONT_SIZES.find((size) => size > fontSize) ??
+                          FONT_SIZES[FONT_SIZES.length - 1],
+                      )
+                    }
+                  >
+                    A+
+                  </button>
+                  <span className="muted">Theme</span>
+                  <button
+                    className="secondary"
+                    aria-label={`Theme: ${theme}`}
+                    title="Switch theme: system, light, dark"
+                    onClick={() =>
+                      setTheme(
+                        THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length],
+                      )
+                    }
+                  >
+                    {theme === "dark"
+                      ? "☾ Dark"
+                      : theme === "light"
+                        ? "☀ Light"
+                        : "◐ Auto"}
+                  </button>
+                </div>
+              </section>
+              <section className="panel">
+                <h2>Practice</h2>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={answerOnClick}
+                    onChange={(e) => setAnswerOnClick(e.target.checked)}
+                  />
+                  Show the answer as soon as I pick a choice (no Submit button)
+                </label>
+              </section>
               <AIProviderSettings
                 onSaved={() => void api("/models").then(setSettings)}
               />
@@ -2267,6 +2395,7 @@ function App() {
           )}
         </Suspense>
       </main>
+      {page === "Materials" && <BackToTop />}
       {citation && (
         <Suspense fallback={null}>
           <div

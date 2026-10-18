@@ -53,7 +53,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "☆ Flag", exact: true }).click();
   await expect(page.getByRole("button", { name: "★ Flagged" })).toBeVisible();
-  await page.getByRole("button", { name: "← Practice" }).click();
+  await page.getByRole("navigation").getByRole("button", { name: "Practice", exact: true }).click();
   await page
     .getByRole("button", { name: "Review", exact: true })
     .first()
@@ -66,7 +66,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
     fullPage: true,
   });
   // A new custom set remembers the latest answer from any set.
-  await page.getByRole("button", { name: "← Practice" }).click();
+  await page.getByRole("navigation").getByRole("button", { name: "Practice", exact: true }).click();
   await page.getByText("Custom practice set").click();
   await page
     .getByRole("button", { name: "Start practice · 1 questions" })

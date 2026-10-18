@@ -37,7 +37,7 @@
     0 1px 2px rgb(27 40 38 / 0.05),
     0 1px 2px rgb(0 0 0 / 0.35)
   );
-  /* Space between the window edge and the content, shared by header, tabs and page. */
+  /* Space between the window edge and the content, shared by tabs and page. */
   --gutter: clamp(0.75rem, 2.5vw, 2rem);
   --font-sans: "Inter Variable", system-ui, sans-serif;
   --font-serif: "Source Serif 4 Variable", Georgia, serif;
@@ -114,28 +114,6 @@ summary:focus-visible {
 a {
   color: var(--accent-text);
   text-underline-offset: 0.18em;
-}
-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.7rem var(--gutter);
-  background: var(--surface);
-  gap: 1rem;
-}
-.brand {
-  font-family: var(--font-serif);
-  font-size: 1.4rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--accent-text);
-  text-decoration: none;
-  white-space: nowrap;
-}
-header select {
-  max-width: 45%;
-  margin: 0;
 }
 nav {
   display: flex;
@@ -828,14 +806,6 @@ pre {
   margin: 0;
   padding: 0.35rem 0.8rem;
 }
-.header-tools {
-  display: flex;
-  gap: 0.3rem;
-  margin-left: auto;
-}
-.header-tools button {
-  padding: 0.35rem 0.65rem;
-}
 /* Materials reader: file list beside the open section. */
 .reader {
   display: grid;
@@ -952,9 +922,6 @@ details.deck[open] > summary {
   :root {
     font-size: 16px;
   }
-  .brand {
-    font-size: 1.15rem;
-  }
   nav button {
     padding: 0.7rem 0.7rem;
     font-size: 0.88rem;
@@ -1010,4 +977,62 @@ label.file-button input {
   width: 1px;
   height: 1px;
   opacity: 0;
+}
+/* Question page: Previous / position / Next stay at the top while the page scrolls. */
+.question-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  background: var(--bg);
+}
+.question-nav-end {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* Sure / Unsure, Submit and the save status share one line under the choices. */
+.answer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.answer-row .save-status {
+  margin-left: 0;
+}
+.set-progress {
+  margin: 1rem 0;
+}
+/* Note cards: the title and its Delete button on one summary line. */
+.note-card > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.note-delete {
+  flex-shrink: 0;
+}
+.back-to-top {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+}
+/* The library picker (only with several libraries) sits at the right end of the tabs. */
+nav select {
+  width: auto;
+  max-width: 40%;
+  margin: 0 0 0 auto;
+  align-self: center;
+}
+.display-tools {
+  align-items: center;
 }

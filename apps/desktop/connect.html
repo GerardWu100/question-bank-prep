@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Connect to a server</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0; padding: 1.25rem 1.5rem; background: Canvas; color: CanvasText; }
+  h1 { font-size: 1.1rem; margin: 0 0 0.5rem; }
+  p { margin: 0 0 1rem; font-size: 0.9rem; opacity: 0.8; }
+  input { width: 100%; box-sizing: border-box; padding: 0.55rem; font: inherit; border-radius: 6px; border: 1px solid GrayText; }
+  .row { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+  button { padding: 0.5rem 1rem; font: inherit; border-radius: 6px; cursor: pointer; }
+  #error { color: #d9534f; min-height: 1.2em; margin: 0.5rem 0 0; }
+</style>
+</head>
+<body>
+<h1>Connect to a server</h1>
+<p>The address of your Question Bank Prep server, for example <code>https://study.example.com</code> or <code>http://192.168.1.20:6848</code>. Questions, notes and progress then come from the server; sign in with its password.</p>
+<form id="form">
+  <input id="url" type="url" required autofocus placeholder="https://study.example.com">
+  <p id="error"></p>
+  <div class="row">
+    <button type="button" id="cancel">Cancel</button>
+    <button type="submit">Connect</button>
+  </div>
+</form>
+<script>
+  const input = document.getElementById("url");
+  input.value = new URLSearchParams(location.search).get("current") || "";
+  document.getElementById("cancel").onclick = () => window.desktop.cancel();
+  document.getElementById("form").onsubmit = async (event) => {
+    event.preventDefault();
+    document.getElementById("error").textContent = await window.desktop.connect(input.value.trim());
+  };
+</script>
+</body>
+</html>

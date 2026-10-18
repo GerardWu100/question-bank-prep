@@ -7,7 +7,10 @@ const ENDPOINT_PRESETS = [
   { label: "OpenAI", url: "https://api.openai.com/v1" },
   { label: "DeepSeek", url: "https://api.deepseek.com/v1" },
   { label: "Groq", url: "https://api.groq.com/openai/v1" },
-  { label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  {
+    label: "Google Gemini",
+    url: "https://generativelanguage.googleapis.com/v1beta/openai",
+  },
   { label: "Ollama (this computer)", url: "http://localhost:11434/v1" },
 ];
 /** Rows of the endpoint's model list shown at once; the filter narrows the rest. */

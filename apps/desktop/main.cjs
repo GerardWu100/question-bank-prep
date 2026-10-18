@@ -1,7 +1,10 @@
-// Desktop wrapper: runs the study server inside Electron on a private loopback port and
-// shows it in a window. No password (loopback only); data lives in the app's user-data
-// folder. The question-bank and study-notes folders are chosen from the File menu.
-const { app, BrowserWindow, dialog, Menu, shell } = require("electron");
+// Desktop wrapper with two modes, chosen in the File menu:
+// - This computer (default): runs the study server inside Electron on a private loopback
+//   port, with no password; data lives in the app's user-data folder, and the
+//   question-bank and study-notes folders are chosen from the File menu.
+// - Server: shows a hosted Question Bank Prep server (for example the Docker image), so
+//   questions, notes and progress come from it; sign in with the server's password.
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
 const { existsSync, readFileSync, writeFileSync, mkdirSync } = require("node:fs");
 const { createServer } = require("node:net");
 const { join } = require("node:path");
@@ -10,11 +13,17 @@ const { pathToFileURL } = require("node:url");
 const LOOPBACK = "127.0.0.1";
 const SERVER_START_TIMEOUT_MS = 30_000;
 const HEALTH_POLL_MS = 200;
+/** How long Connect waits for a server to answer before reporting it unreachable. */
+const SERVER_CHECK_TIMEOUT_MS = 8_000;
 /** Built by `npm run build:desktop`: bundled server, calculator worker and web build. */
 const BUILD_DIRECTORY = join(__dirname, "build");
 const settingsPath = () => join(app.getPath("userData"), "desktop-settings.json");
 
-/** Desktop settings: `{ materialRoot?: string, readingRoot?: string }` (absolute folders). */
+/**
+ * Desktop settings: `{ serverUrl?: string, materialRoot?: string, readingRoot?: string }`.
+ * serverUrl (http or https origin) selects server mode; the folders are absolute paths
+ * used only in local mode.
+ */
 function readSettings() {
   try {
     return JSON.parse(readFileSync(settingsPath(), "utf8"));
@@ -71,14 +80,57 @@ async function startServer() {
 async function chooseFolder(key, title) {
   const { canceled, filePaths } = await dialog.showOpenDialog({ title, properties: ["openDirectory"] });
   if (canceled || !filePaths[0]) return;
-  writeSettings({ ...readSettings(), [key]: filePaths[0] });
+  saveAndRestart({ [key]: filePaths[0] });
+}
+
+/** Save a change to the settings and restart the app so it takes effect. */
+function saveAndRestart(change) {
+  writeSettings({ ...readSettings(), ...change });
   app.relaunch();
   app.exit(0);
 }
 
-function buildMenu() {
+/** Small window asking for a server address; connect.html talks to main through preload.cjs. */
+function openConnectWindow(parent) {
+  const connect = new BrowserWindow({
+    parent,
+    modal: Boolean(parent),
+    width: 520,
+    height: 300,
+    resizable: false,
+    title: "Connect to a server",
+    webPreferences: { preload: join(__dirname, "preload.cjs") },
+  });
+  connect.setMenu(null);
+  void connect.loadFile(join(__dirname, "connect.html"), {
+    query: { current: readSettings().serverUrl ?? "" },
+  });
+}
+ipcMain.handle("cancel-connect", (event) => BrowserWindow.fromWebContents(event.sender)?.close());
+ipcMain.handle("connect-server", async (_event, address) => {
+  let origin;
+  try {
+    const url = new URL(String(address));
+    if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+    origin = url.origin;
+  } catch {
+    return "Enter a full address starting with http:// or https://.";
+  }
+  // The app's health route is public, so this works before signing in.
+  try {
+    const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(SERVER_CHECK_TIMEOUT_MS) });
+    if (!response.ok) return `The server answered ${response.status}. Is this a Question Bank Prep server?`;
+  } catch {
+    return `Could not reach ${origin}. Check the address and that the server is running.`;
+  }
+  saveAndRestart({ serverUrl: origin });
+  return "";
+});
+
+function buildMenu(window) {
   const settings = readSettings();
   const isMac = process.platform === "darwin";
+  const local = !settings.serverUrl;
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       ...(isMac ? [{ role: "appMenu" }] : []),
@@ -86,21 +138,29 @@ function buildMenu() {
         label: "File",
         submenu: [
           {
+            label: settings.serverUrl ? `Connected to ${settings.serverUrl} · change server…` : "Connect to a server…",
+            click: () => openConnectWindow(window),
+          },
+          {
+            label: "Use this computer (local data)",
+            enabled: !local,
+            click: () => saveAndRestart({ serverUrl: undefined }),
+          },
+          { type: "separator" },
+          {
             label: `Question-bank folder… ${settings.materialRoot ? `(${settings.materialRoot})` : "(none)"}`,
+            enabled: local,
             click: () => chooseFolder("materialRoot", "Choose the question-bank folder (Markdown banks, synced on open)"),
           },
           {
             label: `Study-notes folder… ${settings.readingRoot ? `(${settings.readingRoot})` : "(none)"}`,
+            enabled: local,
             click: () => chooseFolder("readingRoot", "Choose the study-notes folder (read-only Markdown)"),
           },
           {
             label: "Forget both folders",
-            enabled: Boolean(settings.materialRoot || settings.readingRoot),
-            click: () => {
-              writeSettings({});
-              app.relaunch();
-              app.exit(0);
-            },
+            enabled: local && Boolean(settings.materialRoot || settings.readingRoot),
+            click: () => saveAndRestart({ materialRoot: undefined, readingRoot: undefined }),
           },
           { type: "separator" },
           { label: "Open data folder", click: () => shell.openPath(join(app.getPath("userData"), "data")) },
@@ -124,16 +184,19 @@ else {
     window?.focus();
   });
   app.whenReady().then(async () => {
-    buildMenu();
-    let url;
-    try {
-      url = await startServer();
-    } catch (error) {
-      dialog.showErrorBox("Study app could not start", String(error?.stack ?? error));
-      app.exit(1);
-      return;
+    window = new BrowserWindow({ width: 1280, height: 900, title: "Question Bank Prep", show: false });
+    buildMenu(window);
+    const { serverUrl } = readSettings();
+    let url = serverUrl;
+    if (!url) {
+      try {
+        url = await startServer();
+      } catch (error) {
+        dialog.showErrorBox("Study app could not start", String(error?.stack ?? error));
+        app.exit(1);
+        return;
+      }
     }
-    window = new BrowserWindow({ width: 1280, height: 900, title: "Question Bank Prep", autoHideMenuBar: false });
     // Links to other sites open in the normal browser, not inside the app.
     window.webContents.setWindowOpenHandler(({ url: target }) => {
       if (!target.startsWith(url)) void shell.openExternal(target);
@@ -145,7 +208,23 @@ else {
         void shell.openExternal(target);
       }
     });
-    await window.loadURL(url);
+    window.show();
+    try {
+      await window.loadURL(url);
+    } catch {
+      // Server mode only: the hosted server is down or the address changed.
+      const { response } = await dialog.showMessageBox(window, {
+        type: "warning",
+        message: `Could not reach ${url}.`,
+        detail: "Check the server, or use the data on this computer.",
+        buttons: ["Retry", "Change server…", "Use this computer"],
+      });
+      if (response === 0) {
+        app.relaunch();
+        app.exit(0);
+      } else if (response === 1) openConnectWindow(window);
+      else saveAndRestart({ serverUrl: undefined });
+    }
   });
   // The server runs in this process, so closing the last window ends both.
   app.on("window-all-closed", () => app.quit());
