@@ -541,7 +541,9 @@ function App() {
       chapter: deck.chapter ?? "",
       statuses: review === "wrong" || review === "unsure" ? [review] : [],
       flagged: review === "flagged",
-      sources: activeSources,
+      // Starred questions were picked by hand, so the Flagged set spans every source,
+      // matching the count on its button, even when a source is switched off.
+      sources: review === "flagged" ? [] : activeSources,
     };
     const existing =
       !review &&
