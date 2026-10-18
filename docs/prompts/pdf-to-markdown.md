@@ -42,13 +42,14 @@ First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). T
 
 ## Tables, diagrams and pictures
 
-- Recreate tables as Markdown tables with the same column order, row order, values and blank cells. No HTML in cells (no `<br>`); separate items in one cell with `; `. The only HTML allowed anywhere is a page marker comment such as `<!-- Source PDF page 12 -->`.
+These are defaults, not bans. When another form shows a table, diagram or chart more faithfully or more clearly (a picture, a text chart, HTML), use it and say why in your report.
+
+- Recreate tables as Markdown tables with the same column order, row order, values and blank cells. Prefer plain Markdown in cells: separate items in one cell with `; ` rather than `<br>`. Use HTML only where Markdown cannot show the content; page markers are HTML comments such as `<!-- Source PDF page 12 -->`.
 - Recreate structure diagrams (flows, decision trees, hierarchies, timelines) as Mermaid with the same labels and relationships.
-- Charts and graphs: redraw a simple one with code; keep the original picture of a complex one.
+- Charts and graphs: by default, redraw a simple one with code and keep the original picture of a complex one.
   - **Simple: redraw.** A curve given by an equation, a chart whose data the page gives, or a few readable points (about 20 or fewer per series, a few series): payoff diagrams, yield and term-structure curves, supply and demand, efficient frontiers, a small bar or line chart. Choose the tool that draws it best (for example Python with matplotlib or plotly, Mermaid's `xychart-beta` for a simple line or bar chart, or another plotting library). When the page gives no data, measure the points from the page image's pixels (find each line or bar by its colour, map pixels to values with the axis ticks) and end the caption with "values approximate". Keep the original title, axes, units, labels, key points and annotations. Save it next to the Markdown as a PNG or SVG (readable on a white background), with its source script under the same name, so it can be regenerated or fixed later.
   - **Complex: keep the original picture, even if Python could approximate it.** Dense real data (price paths, intraday series, scatter clouds, histograms with many bars), many overlapping series, or values you would have to read point by point or cannot read (cut off at the axis). A redraw would smooth away or invent detail. In a born-digital PDF, extract the chart's own embedded picture at full resolution (for example with the `tools` repository's `pdf-to-markdown/pdf2md.py prepare <PDF> --pages <N>`, which saves each page's embedded pictures in `work/images/`; the `my-tools` skill says how to run it); otherwise crop the chart from the rendered page. Include the chart's title, axes and legend, not its caption, which you write as text.
   - Embed either kind with a relative link.
-- Never draw a chart as text or ASCII art, and never screenshot a table or a structure diagram: recreate those.
 - Also keep the original picture for what Mermaid, a table or a chart cannot show (a photo, a scanned form). Keep image files next to the Markdown and use relative links.
 
 ## Check before you deliver
