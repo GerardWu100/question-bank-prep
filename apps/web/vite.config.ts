@@ -1,7 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 export default defineConfig({
-  root: new URL(".", import.meta.url).pathname,
+  // fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/...", which is not a path.
+  root: fileURLToPath(new URL(".", import.meta.url)),
   plugins: [react()],
   build: { outDir: "dist" },
   server: {
