@@ -219,16 +219,18 @@ p {
 }
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  margin: 1.5rem 0 2rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0.6rem 0 0.8rem;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow);
 }
 .stats div {
-  padding: 1.1rem 1.3rem;
+  min-width: 0;
+  padding: 0.5rem 0.8rem;
   border-right: 1px solid var(--border);
+  overflow-wrap: anywhere;
 }
 .stats div:last-child {
   border: 0;
@@ -236,7 +238,7 @@ p {
 .stats strong {
   display: block;
   font-family: var(--font-serif);
-  font-size: 2rem;
+  font-size: 1.35rem;
   font-weight: 600;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
@@ -254,6 +256,18 @@ p {
   flex-wrap: wrap;
   margin: 0.8rem 0;
 }
+.practice-heading {
+  gap: 0.5rem 0.8rem;
+  margin: 0 0 0.6rem;
+}
+.practice-heading h1 {
+  margin: 0;
+}
+.practice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 .chips {
   display: flex;
   gap: 0.5rem;
@@ -262,6 +276,14 @@ p {
 }
 .chips button {
   text-transform: capitalize;
+}
+.chips.practice-sources {
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.8rem;
+}
+.practice-sources button {
+  min-height: 2.5rem;
+  padding: 0.4rem 0.8rem;
 }
 .secondary {
   background: transparent;
@@ -729,6 +751,26 @@ pre {
   font-size: 0.9rem;
 }
 /* Practice home: one progress line per source and chapter. */
+.panel.deck,
+.panel.practice-custom {
+  padding: 0.6rem 0.9rem;
+  margin: 0.6rem 0;
+}
+.practice-custom > summary {
+  min-height: 2.5rem;
+  padding: 0.3rem 0;
+}
+.note-card {
+  margin: 0.55rem 0;
+}
+.note-card:not([open]) {
+  padding: 0.35rem 0.9rem;
+}
+.note-card > summary {
+  min-height: 2.75rem;
+  padding: 0.4rem 0;
+  overflow-wrap: anywhere;
+}
 .deck-source {
   border-top: 1px solid var(--border);
   padding: 0.4rem 0;
@@ -737,8 +779,8 @@ pre {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(4rem, 12rem) 6.5rem 15rem;
   align-items: center;
-  gap: 0.4rem 1rem;
-  padding: 0.45rem 0 0.45rem 1.2rem;
+  gap: 0.3rem 0.75rem;
+  padding: 0.3rem 0 0.3rem 0.8rem;
   border-radius: 8px;
 }
 .deck-row + .deck-row {
@@ -775,13 +817,14 @@ pre {
 }
 .deck-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   justify-content: flex-start;
 }
 .deck-actions button {
   white-space: nowrap;
+  min-height: 2.25rem;
   margin: 0;
-  padding: 0.35rem 0.9rem;
+  padding: 0.35rem 0.8rem;
 }
 .header-tools {
   display: flex;
@@ -858,17 +901,20 @@ button.small {
 }
 details.deck > summary {
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 2.75rem;
+  gap: 0.2rem 0.7rem;
   cursor: pointer;
   list-style: revert;
 }
 details.deck > summary h2 {
   display: inline;
+  font-size: 1.1rem;
   margin: 0;
 }
 details.deck[open] > summary {
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.3rem;
 }
 .reasoning {
   margin-bottom: 0.6rem;
@@ -912,10 +958,10 @@ details.deck[open] > summary {
     font-size: 0.88rem;
   }
   .stats div {
-    padding: 0.7rem;
+    padding: 0.45rem 0.35rem;
   }
   .stats strong {
-    font-size: 1.6rem;
+    font-size: 1.25rem;
   }
   .stats span {
     font-size: 0.72rem;

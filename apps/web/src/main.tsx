@@ -172,6 +172,7 @@ function App() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [activeSet, setActiveSet] = useState<any>(null),
+    [lastPracticeSetId, setLastPracticeSetId] = useState<string | null>(null),
     [eligibleCount, setEligibleCount] = useState(0),
     [question, setQuestion] = useState<any>(null),
     [draft, setDraft] = useState(""),
@@ -309,7 +310,12 @@ function App() {
   const loadLibraries = async () => {
     const data = await api("/libraries");
     setLibraries(data.libraries);
-    if (data.libraries.length) setLibrary(data.libraries[0].id);
+    const savedLibrary = loadPreference<string | null>("library", null);
+    if (data.libraries.length)
+      setLibrary(
+        data.libraries.find((entry: any) => entry.id === savedLibrary)?.id ??
+          data.libraries[0].id,
+      );
   };
   const showImportPreview = (next: any) => {
     setImportPreview(next);
@@ -327,6 +333,10 @@ function App() {
   }, []);
   useEffect(() => {
     if (!library) return;
+    savePreference("library", library);
+    setLastPracticeSetId(
+      loadPreference<string | null>(`lastPractice:${library}`, null),
+    );
     void run(async () => {
       const { configured } = await api("/material-root");
       setMaterialRoot(configured);
@@ -396,13 +406,16 @@ function App() {
           )
         : null,
     );
+    // The set cursor lives on the server; remember only which set this browser last used.
+    setLastPracticeSetId(set.id);
+    savePreference(`lastPractice:${library}`, set.id);
   };
   /** Show the view named in the URL hash: a page, or an open practice set. */
   const showHash = async () => {
     const { page: target, setId } = parseHash(window.location.hash);
     if (setId) {
       try {
-        await openSet(setId);
+        await openSet(setId, { keepPosition: true });
         return;
       } catch {
         // The set no longer exists; fall back to the practice home.
@@ -412,10 +425,14 @@ function App() {
     setActiveSet(null);
     setPage(target);
   };
-  const openSet = async (id: string) => {
+  const openSet = async (id: string, { keepPosition = false } = {}) => {
     let set = await api(`${scope}/sets/${id}`);
     const firstOpen = set.itemStatuses.indexOf("unanswered");
-    if (set.itemStatuses[set.cursor] !== "unanswered" && firstOpen >= 0)
+    if (
+      !keepPosition &&
+      set.itemStatuses[set.cursor] !== "unanswered" &&
+      firstOpen >= 0
+    )
       set = await api(
         `${scope}/sets/${id}`,
         {
@@ -429,6 +446,9 @@ function App() {
     await loadQuestion(set, set.cursor || 0);
     setPage("Practice");
   };
+  const resumableSet = overview.sets.find(
+    (set: any) => set.id === lastPracticeSetId && set.count > 0,
+  );
   const submitted = Boolean(question?.setState?.submitted);
   const answer = (selection: string, conf = confidence) => {
     setDraft(selection);
@@ -993,6 +1013,7 @@ function App() {
             value={library}
             onChange={(e) => {
               setLibrary(e.target.value);
+              setLastPracticeSetId(null);
               setQuestion(null);
               setActiveSet(null);
             }}
@@ -1074,29 +1095,57 @@ function App() {
         )}
         {library && page === "Practice" && !question && (
           <>
-            <div className="row">
+            <div className="row practice-heading">
               <h1>Practice</h1>
-              {/* Flagged questions are few, so they get one central set across all topics. */}
-              {sumRows(overview.catalog ?? []).flagged > 0 && (
+              <div className="practice-actions">
                 <button
-                  className="secondary"
-                  disabled={busy}
+                  disabled={busy || !resumableSet}
+                  title={
+                    resumableSet
+                      ? resumableSet.title
+                      : "Start a practice set to enable Resume"
+                  }
                   onClick={() =>
-                    void run(() =>
-                      openDeck(
-                        { topic: "" },
-                        sumRows(overview.catalog ?? []).flagged,
-                        "flagged",
-                      ),
-                    )
+                    void run(() => openSet(resumableSet.id, { keepPosition: true }))
                   }
                 >
-                  ★ Flagged {sumRows(overview.catalog ?? []).flagged}
+                  Resume last session
                 </button>
+                {/* Flagged questions are few, so their set spans every topic. */}
+                {sumRows(overview.catalog ?? []).flagged > 0 && (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(() =>
+                        openDeck(
+                          { topic: "" },
+                          sumRows(overview.catalog ?? []).flagged,
+                          "flagged",
+                        ),
+                      )
+                    }
+                  >
+                    ★ Flagged {sumRows(overview.catalog ?? []).flagged}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="stats">
+              {(["unanswered", "correct", "unsure", "wrong"] as const).map(
+                (key) => (
+                  <div key={key}>
+                    <strong>{overview.counts[key] || 0}</strong>
+                    <span>{key}</span>
+                  </div>
+                ),
               )}
             </div>
             {allSources.length > 1 && (
-              <div className="chips source-chips" aria-label="Sources">
+              <div
+                className="chips source-chips practice-sources"
+                aria-label="Sources"
+              >
                 {allSources.map((name) => {
                   const on =
                     !activeSources.length || activeSources.includes(name);
@@ -1158,23 +1207,13 @@ function App() {
                 </details>
               );
             })}
-            <div className="stats">
-              {(["unanswered", "correct", "unsure", "wrong"] as const).map(
-                (key) => (
-                  <div key={key}>
-                    <strong>{overview.counts[key] || 0}</strong>
-                    <span>{key}</span>
-                  </div>
-                ),
-              )}
-            </div>
             {overview.catalog && !overview.counts.total && (
               <p className="muted">
                 No questions yet. Set MATERIAL_ROOT to your question-bank
                 folder.
               </p>
             )}
-            <details className="panel">
+            <details className="panel practice-custom">
               <summary>Custom practice set</summary>
               <div className="filters">
                 {(
@@ -1823,7 +1862,7 @@ function App() {
               notes
                 .filter((n) => (n.provenance === "ai") === (notesView === "ai"))
                 .map((n) => (
-                  <details className="panel" key={n.id}>
+                  <details className="panel note-card" key={n.id}>
                     <summary>{n.title}</summary>
                     <Markdown text={n.content} />
                     <div className="row">
