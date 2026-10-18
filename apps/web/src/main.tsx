@@ -8,6 +8,8 @@ import React, {
 import { createRoot } from "react-dom/client";
 import { api, ApiError, operation } from "./api";
 import { Markdown } from "./Markdown";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/source-serif-4";
 import "./style.css";
 
 const pages = [
