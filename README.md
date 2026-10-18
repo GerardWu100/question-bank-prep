@@ -22,6 +22,7 @@ Commercial question banks lock your answers inside their site, and generic flash
 - **Your bank stays plain Markdown.** Point the app at a folder; it syncs every time you open it and keeps your answer history when a file is edited or re-extracted.
 - **Read your notes beside the questions.** The Materials page shows your study notes (Markdown, math, images), one section at a time.
 - **An AI tutor beside every question and note section.** See [AI features](#ai-features) below.
+- **Three ready prompts build the bank for you.** Give them to an AI coding agent to turn study PDFs into notes and a clean question bank. See [Build a bank from your PDFs](#build-a-bank-from-your-pdfs-three-prompts).
 - **Self-hosted and private.** One Docker image for PCs, servers and Raspberry Pi; one SQLite file holds every answer, note and chat. Practice works without the AI.
 
 <p>
@@ -52,9 +53,17 @@ The tutor sits under each practice question, beside each section of your notes, 
 
 It runs on the ChatGPT subscription you already have: the app reads the existing Codex login, so there is no API key and no per-token bill. Pick any model your account offers, and its thinking level, in Settings. Only the current question or note section, the recent messages of that chat, and what the tutor looks up are sent. Practice works fully without AI.
 
-## How a bank is built
+## Build a bank from your PDFs: three prompts
 
-Three ready-made prompts, for any exam, turn study PDFs into a bank (see [Building a question bank](#building-a-question-bank-three-prompts)):
+You do not type questions in. Open an AI coding agent (such as Claude Code or Codex) in your own study folder, fill in the short **Settings** block at the top of each prompt (exam name, folders, the file that lists your topics and chapters), and send it. The prompts work for any exam; nothing in them is CFA-specific.
+
+| Step | Prompt | What you get |
+|---|---|---|
+| 1 | [PDF → Markdown](docs/prompts/pdf-to-markdown.md) | Faithful Markdown notes with formulas, tables and diagrams, shown on the Materials page |
+| 2 | [Extract questions](docs/prompts/extract-questions.md) | Multiple-choice questions copied word for word into `question_bank/<NN-topic>/<source>.md`, checked with `npm run check-bank` |
+| 3 | [Review the bank](docs/prompts/review-questions.md) | Duplicates and near-duplicates removed (`npm run find-duplicates`), and missing keys filled under an `Answer (AI)` heading that never replaces a source key |
+
+Keep your study folder private when it holds copyrighted material; this repository holds only the prompts.
 
 ```mermaid
 flowchart LR
@@ -194,14 +203,6 @@ The Practice page has one toggle per source (switch a source off to practise onl
 Set `READING_ROOT` in `.env` to a folder of Markdown study material (for example `cfa/md_materials`) to read it on the **Materials** page: files grouped by folder, long files split into sections with Previous/Next (a whole-curriculum file whose top headings are the CFA topics opens as one section per topic), images and Mermaid diagrams shown, last place remembered, and an **Ask AI about this section** box under each section that sends that section to the tutor as context (the conversation is saved per section). It is read-only; the upload import appears there only when no `MATERIAL_ROOT` is set. The header has **A− / A+** (text size) and a theme switch (Auto, Light, Dark), remembered per browser; both themes keep body text at high contrast and use bundled fonts, so the app looks the same on every device. Sources are read-only in the app; there is no editor and no Progress page. The app tracks two distinct answers: the latest overall answer, and the answer within each set. A set without its own answer for a question shows the latest overall answer; answering again in a set updates both. Sure/Unsure applies only to correct answers. A saved response means done, not mastery.
 
 **Resume last session**, at the top of Practice, reopens the last set used in this browser for the selected library at its exact saved question, even if that question is answered. It does not create a new set. The button is disabled until a valid session exists; the selected library is remembered after reload. Chapter **Start / Continue** keeps its existing first-unanswered behavior. Four compact result counters appear above the topic list, and topic/chapter controls and collapsed note cards use less vertical space; the fonts and reading/question layouts are unchanged.
-
-## Building a question bank: three prompts
-
-Three self-contained prompts turn exam-prep PDFs into a bank this app imports. They work for any exam: each starts with a short **Settings** block (exam, folders, the outline file that lists topics and chapters, and a tracking folder for the source list and review log). Run them in your own study repository, which should stay private when it holds copyrighted material; this public repository holds only the prompts. Identical copies live in the `cfa` repository.
-
-1. **PDF → Markdown:** [docs/prompts/pdf-to-markdown.md](docs/prompts/pdf-to-markdown.md) converts PDFs into faithful Markdown notes, which the Materials page can show (`READING_ROOT`).
-2. **Markdown → question bank:** [docs/prompts/extract-questions.md](docs/prompts/extract-questions.md) copies multiple-choice questions word for word into `question_bank/<NN-topic>/<source>.md`, checked with `npm run check-bank`.
-3. **Dedupe and missing answers:** [docs/prompts/review-questions.md](docs/prompts/review-questions.md) removes duplicate and near-duplicate questions (`npm run find-duplicates -- <topic-folder>` lists candidates) and writes missing keys under an `Answer (AI)` heading; the app keeps that marker in its data but does not show it while you practise.
 
 ## AI and calculator
 
