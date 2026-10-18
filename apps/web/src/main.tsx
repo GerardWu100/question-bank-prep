@@ -223,6 +223,34 @@ const blankCounts = {
   unanswered: 0,
   ungradable: 0,
 };
+/** Folder names that never hold a bank: version control and tool state. */
+const SKIPPED_IMPORT_FOLDERS = new Set([".git", "node_modules"]);
+/**
+ * Read picked files into import entries, keeping only Markdown (README.md describes a
+ * bank, so it is skipped). From a folder, `webkitRelativePath` is
+ * "picked-folder/01-quant/qbank.md"; the picked folder's own name is dropped, so the
+ * first remaining folder becomes the topic and the file name the source, as in a
+ * configured question-bank folder.
+ */
+async function readMarkdownFiles(list: FileList | null) {
+  const files = [...(list ?? [])].filter((file) => {
+    const parts = (file.webkitRelativePath || file.name).split("/");
+    return (
+      /\.(md|markdown)$/i.test(file.name) &&
+      file.name.toLowerCase() !== "readme.md" &&
+      !parts.some((part) => SKIPPED_IMPORT_FOLDERS.has(part))
+    );
+  });
+  const entries = await Promise.all(
+    files.map(async (file) => ({
+      path: file.webkitRelativePath
+        ? file.webkitRelativePath.split("/").slice(1).join("/")
+        : file.name,
+      content: await file.text(),
+    })),
+  );
+  return entries.sort((a, b) => a.path.localeCompare(b.path));
+}
 function App() {
   const [page, setPage] = useState<Page>("Practice"),
     [libraries, setLibraries] = useState<any[]>([]),
@@ -250,8 +278,10 @@ function App() {
     [noteDraft, setNoteDraft] = useState<any>(null),
     [notesView, setNotesView] = useState<"mine" | "ai">("mine");
   const [importPreview, setImportPreview] = useState<any>(null),
-    [importPath, setImportPath] = useState("questions.md"),
-    [importContent, setImportContent] = useState(""),
+    // Markdown files picked for import: one file, or every .md file in a folder.
+    [importFiles, setImportFiles] = useState<{ path: string; content: string }[]>(
+      [],
+    ),
     [chats, setChats] = useState<any[]>([]),
     [chat, setChat] = useState<any>(null),
     [prompt, setPrompt] = useState(""),
@@ -1726,58 +1756,61 @@ function App() {
               {!materialRoot && (
                 <section className="panel">
                   <h2>Import Markdown</h2>
-                  <label>
-                    Choose a file
-                    <input
-                      type="file"
-                      accept=".md,.markdown,text/markdown"
-                      onChange={(e) =>
-                        void run(async () => {
-                          const selected = e.target.files?.[0];
-                          if (selected) {
-                            setImportPath(selected.name);
-                            setImportContent(await selected.text());
+                  <div className="chips">
+                    <label className="secondary file-button">
+                      Choose a folder
+                      <input
+                        type="file"
+                        multiple
+                        // Non-standard but supported by Chrome, Edge, Firefox, Safari and Electron.
+                        {...({ webkitdirectory: "" } as any)}
+                        onChange={(e) => {
+                          const input = e.target;
+                          void run(async () => {
+                            setImportFiles(await readMarkdownFiles(input.files));
+                            input.value = "";
                             showImportPreview(null);
-                          }
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    File name
-                    <input
-                      value={importPath}
-                      onChange={(e) => {
-                        setImportPath(e.target.value);
-                        showImportPreview(null);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    Markdown source
-                    <textarea
-                      rows={10}
-                      value={importContent}
-                      onChange={(e) => {
-                        setImportContent(e.target.value);
-                        showImportPreview(null);
-                      }}
-                      placeholder="Paste your question-bank Markdown"
-                    />
-                  </label>
+                          });
+                        }}
+                      />
+                    </label>
+                    <label className="secondary file-button">
+                      Choose a file
+                      <input
+                        type="file"
+                        accept=".md,.markdown,text/markdown"
+                        onChange={(e) => {
+                          const input = e.target;
+                          void run(async () => {
+                            setImportFiles(await readMarkdownFiles(input.files));
+                            input.value = "";
+                            showImportPreview(null);
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {importFiles.length > 0 && (
+                    <p className="muted">
+                      {importFiles.length} Markdown file
+                      {importFiles.length === 1 ? "" : "s"}:{" "}
+                      {importFiles
+                        .slice(0, 8)
+                        .map((file) => file.path)
+                        .join(", ")}
+                      {importFiles.length > 8 ? " …" : ""}
+                    </p>
+                  )}
                   <button
-                    disabled={busy || !importContent.trim()}
+                    disabled={busy || !importFiles.length}
                     onClick={() =>
                       void run(async () =>
                         showImportPreview(
                           await api(`${scope}/imports/preview`, {
-                            files: [
-                              {
-                                path: importPath,
-                                content: importContent,
-                                type: "questions",
-                              },
-                            ],
+                            files: importFiles.map((file) => ({
+                              ...file,
+                              type: "questions",
+                            })),
                           }),
                         ),
                       )
@@ -1860,7 +1893,7 @@ function App() {
                               { acceptWarnings: true, identityMappings },
                             );
                             showImportPreview(null);
-                            setImportContent("");
+                            setImportFiles([]);
                             await refresh();
                           })
                         }
@@ -2092,21 +2125,18 @@ function App() {
                   <a href={`/api${scope}/export/notes?origin=ai`} download>
                     AI notes (Markdown)
                   </a>
-                  <a href={`/api${scope}/export/progress`} download>
-                    Progress (CSV)
-                  </a>
                   <a href={`/api${scope}/export/study-data`} download>
-                    Study data (JSON, for import)
+                    Study progress (JSON)
                   </a>
                 </div>
               </section>
               <section className="panel">
-                <h2>Import study data</h2>
+                <h2>Import study progress</h2>
                 <label>
-                  Study data (JSON) or progress (CSV) exported from this app
+                  Study progress (JSON) exported from this app
                   <input
                     type="file"
-                    accept=".json,.csv,application/json,text/csv"
+                    accept=".json,application/json"
                     disabled={busy}
                     onChange={(e) => {
                       const input = e.target;

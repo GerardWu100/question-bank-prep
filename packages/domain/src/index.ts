@@ -138,17 +138,31 @@ const SOLUTION_HEADING = /^(solution|explanation)$/i;
  * ----------
  * content : Markdown text.
  * path : source path, used only in issue reports.
- * labels : allowed choice labels, in display order.
+ * labels : allowed choice labels, in display order. The default, A to Z, takes letters
+ *     only in order (A, B, C, ...), so a question may have any number of choices up to 26.
  *
  * Returns
  * -------
  * questions : parsed questions in source order.
  * issues : errors block an import; warnings mark ungradable or doubtful questions.
  */
+/** Choice labels when a library sets none: the letters A to Z, used in order. */
+export const DEFAULT_CHOICE_LABELS = Array.from({ length: 26 }, (_, index) =>
+  String.fromCharCode(65 + index),
+);
+/** Keep choice matches whose letter is not past the next expected one (A, then B, ...). */
+function inLetterOrder(matches: RegExpMatchArray[]) {
+  let next = 0;
+  return matches.filter((match) => {
+    if (match[1] > String.fromCharCode(65 + next)) return false;
+    next++;
+    return true;
+  });
+}
 export function parseQuestions(
   content: string,
   path = "",
-  labels = ["A", "B", "C", "D", "E"],
+  labels = DEFAULT_CHOICE_LABELS,
 ): { questions: ParsedQuestion[]; issues: ImportIssue[] } {
   const tree: any = markdownParser.parse(content);
   // Top-level heading nodes in source order, as { title, depth, start, end, line }.
@@ -248,7 +262,12 @@ export function parseQuestions(
       ),
     );
     const choiceBody = content.slice(choiceStart, choiceEnd);
-    const matches = [...choiceBody.matchAll(choicePattern)];
+    // With the default A–Z labels a choice must be the next letter: a line such as
+    // "I. Only statement one" inside choice C stays part of C. A repeated earlier letter is
+    // kept, so it is still reported as a duplicate label.
+    const allMatches = [...choiceBody.matchAll(choicePattern)];
+    const matches =
+      labels === DEFAULT_CHOICE_LABELS ? inLetterOrder(allMatches) : allMatches;
     const choices = matches.map((match, index) => ({
       label: match[1],
       text: choiceBody

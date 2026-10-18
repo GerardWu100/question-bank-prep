@@ -986,3 +986,28 @@ details.deck[open] > summary {
 .ai-provider .chips button {
   text-transform: none;
 }
+/* A file picker shown as a button: the label looks like .secondary and hides its input. */
+label.file-button {
+  display: inline-block;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0.6rem 1.05rem;
+  font-size: 1rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+label.file-button:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+label.file-button:focus-within {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+label.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}

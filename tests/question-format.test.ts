@@ -67,9 +67,20 @@ describe("parser edge cases", () => {
         .questions[0].answerKey,
     ).toBeNull();
   });
-  it("reports a choice label beyond the configured set instead of merging it", () => {
+  it("accepts more than five lettered choices, in letter order", () => {
+    const { questions, issues } = parseQuestions(
+      `## Question 1\nWhich hold?\n\nI. One\n\nII. Two\n### Choices\nA. a\nB. b\nC. c\nI. only (stays in C)\nD. d\nE. e\nF. f\nG. g\n### Answer\nG\n`,
+    );
+    expect(issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(questions[0].choices.map((choice) => choice.label)).toEqual(["A", "B", "C", "D", "E", "F", "G"]);
+    expect(questions[0].choices[2].text).toContain("I. only");
+    expect(questions[0].answerKey).toBe("G");
+  });
+  it("reports a choice label beyond a configured set instead of merging it", () => {
     const { questions, issues } = parseQuestions(
       `## Question 1\nS\n### Choices\nA. a\nB. b\nC. c\nD. d\nE. e\nF. f\n### Answer\nF\n`,
+      "",
+      ["A", "B", "C", "D", "E"],
     );
     expect(issues.some((issue) => issue.message.includes("choice F"))).toBe(
       true,

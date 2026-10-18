@@ -15,6 +15,7 @@ How to use: fill in **Settings** and give everything below the line to an AI age
 - **OUTLINE**: `<file listing the exam's topics and chapters, with chapter codes and learning objectives>`
 - **TRACKING**: `docs/question-bank/` (holds `sources.md` and `review-log.md`)
 - **JOB**: extract `<source name>`, topic `<NN Topic>`, into `<BANK>/<NN-topic>/<source-file>.md`
+- **SHARED_FILE** (optional): `<small sources that share one others.md per topic, in order>`, or `none`
 
 ## Task
 
@@ -35,13 +36,14 @@ If the file or a row you need is missing, create it from MATERIALS and OUTLINE f
 ```text
 BANK/
 ├── 01-<topic-slug>/
-│   ├── <source-file>.md     ← one file per source per topic
+│   ├── <source-file>.md     ← one file per source per topic (or others.md, see Shared file)
 │   └── assets/              ← images copied from MATERIALS, if any
 └── 02-<topic-slug>/
 ```
 
 - Only bank files go in BANK. Every `.md` file there is read as a question bank, so put no README or notes inside. Keep each folder's `.gitkeep`.
 - One file per source per topic keeps files small enough to check and lets you re-extract one source without touching others.
+- **Shared file.** The sources named in SHARED_FILE go into `others.md` instead: first a title `# <EXAM> · <NN> <Topic> · Others` and one line naming the sources it combines, then one section per source in SHARED_FILE order. Each section is exactly the file this prompt would otherwise write for that source, starting with its own file-title heading. When JOB names one of these sources, write or replace only its section (create `others.md` with the title if it is missing) and leave the other sections byte for byte unchanged; the checks below apply to the whole file.
 
 ## Headings (depth matters: a parser reads them)
 
@@ -78,8 +80,8 @@ A parser reads the bank files by their Markdown headings. Only real headings cou
 
 - **Errors** (the file cannot be used until fixed):
   - The file has no `Question` heading.
-  - A `Question` heading (text starting with `Question `) has fewer than two choices, or two choices with the same label. A choice is a line starting with its label and a period: `A. `, `B. `, `C. ` (labels A to E).
-  - A choice uses a label after E, such as `F. `.
+  - A `Question` heading (text starting with `Question `) has fewer than two choices, or two choices with the same label. A choice is a line starting with its label and a period: `A. `, `B. `, `C. ` … (letters A to Z, in order; a question may have more than five choices).
+  - A choice letter is out of order (for example `D. ` right after `B. `): the app reads it as text of the previous choice.
 - **No valid key** (allowed only when the source has no key): there is no `Answer` or `Answer (AI)` sub-heading, or its first non-blank line is not exactly one of that question's choice labels.
 - A question's `Choices`, `Answer` and `Solution` sub-headings are one level deeper than its `Question` heading and use exactly those words.
 - A `Case` heading starts a passage that runs to its first `Question` heading, so exhibits under deeper headings stay in it. Its questions are one level deeper than the case. The case ends at the next heading of the same or a shallower level.

@@ -66,9 +66,9 @@ A. Text            A) Text            A: Text
 - A. Text          **A.** Text        **A**. Text is NOT recognized
 ```
 
-- The default labels are `A` to `E`. For more options or other labels (for example `1, 2, 3, 4`), set **Settings → Choice labels** *before* you import.
-- A choice can span several lines; it runs until the next label.
-- If the bank uses a letter after the last configured label (for example `F.` with labels `A`–`E`), the import shows an error. It does not merge `F` into `E`.
+- Labels are the letters `A` to `Z`, used in order: a question can have two choices or ten. Other label styles (for example `1, 2, 3, 4`) are not read; write them as letters.
+- A choice can span several lines; it runs until the next letter in order. So a line such as `I. Only statement one` inside choice C stays part of C, because `I` is not the next letter (`D`).
+- A letter that repeats (two `B.` lines) is an import error.
 - Choices never shuffle.
 
 ## Answer

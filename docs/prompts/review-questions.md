@@ -14,7 +14,7 @@ How to use: fill in **Settings** and give everything below the line to an AI age
 - **BANK**: `question_bank/`
 - **OUTLINE**: `<file listing the exam's topics, chapters and learning objectives>`
 - **TRACKING**: `docs/question-bank/` (holds `sources.md` and `review-log.md`)
-- **SCOPE**: `<BANK>/<NN-topic>/` (or the whole BANK)
+- **SCOPE**: `<BANK>/<NN-topic>/` (one topic folder per session works best; several sessions can run in parallel on different topics)
 - **SOURCE_PRIORITY**: `<source codes from sources.md, highest first, for example "A > B, C > D"; or "none">`
 
 ## Task
@@ -23,7 +23,7 @@ First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). T
 
 Write two small scripts in a scratch folder outside the repository (Python through `uv run python`), and keep their reports there too, never inside BANK: every `.md` file in BANK is read as a question bank.
 
-- **Format check.** Bank files are read by their Markdown headings (a `#` line inside a fenced code block is not a heading). Report as an *error*: a file with no `Question` heading; a question with fewer than two choices or a repeated label (a choice is a line starting `A. `, `B. ` … with labels A to E); a choice label after E. Report as *no valid key*: a question with no `Answer` or `Answer (AI)` sub-heading, or whose answer's first non-blank line is not exactly one of its choice labels. A `Case` heading's passage runs to its first `Question` heading; its questions sit one level deeper.
+- **Format check.** Bank files are read by their Markdown headings (a `#` line inside a fenced code block is not a heading). Report as an *error*: a file with no `Question` heading; a question with fewer than two choices or a repeated label (a choice is a line starting `A. `, `B. ` …, letters A to Z in order); a choice letter out of order (the app reads it as text of the previous choice). Report as *no valid key*: a question with no `Answer` or `Answer (AI)` sub-heading, or whose answer's first non-blank line is not exactly one of its choice labels. A `Case` heading's passage runs to its first `Question` heading; its questions sit one level deeper.
 - **Duplicate finder.** Compare questions only within one topic folder, never two questions of the same case. Normalize each question's stem plus choices: lower-case, strip Markdown and LaTeX markup. Classify a pair as *same text* (identical), *numbers differ* (identical once every number is replaced by `#`), or *similar* (Jaccard similarity of the two number-masked word sets at or above a threshold, where Jaccard(A, B) = shared words / all distinct words; skip "similar" when either set has fewer than 8 words). When either question belongs to a case, also require the two case passages to pass the same threshold, because one stem over different exhibit data is a different question. Join matches into groups (A~B and B~C give one group) and list each group with file, line, and whether each copy has a key and a solution.
 
 ## The review log
@@ -48,7 +48,7 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
    - same stem but a different concept, learning objective, or choices that test different ideas: not a duplicate, keep both;
    - a question whose answer is one step of another (a one-period vs a two-period forecast): not a duplicate, because the multi-step version is its own skill; keep both.
    - Groups already under "Reviewed, kept both" need no new judgement.
-3. **Which copy to keep.** Follow SOURCE_PRIORITY: when copies come from different sources, keep the copy from the highest-priority source and remove the others, even if a lower-priority copy has the longer solution. Sources listed together (`B, C`) rank equally. Between copies of equal priority, or when SOURCE_PRIORITY is `none`, keep any one copy, preferring one with a source key and a solution. If the kept copy has no key but a removed copy has one, write that key and source in the log so Part B can use it as its reference.
+3. **Which copy to keep.** A question's source is the source code in its ID (`<TOPIC>-<SRC>-…`, codes in `TRACKING/sources.md`), not its file name: one file can hold several sources. Follow SOURCE_PRIORITY: when copies come from different sources, keep the copy from the highest-priority source and remove the others, even if a lower-priority copy has the longer solution. Sources listed together (`B, C`) rank equally. Between copies of equal priority, or when SOURCE_PRIORITY is `none`, keep any one copy, preferring one with a source key and a solution. If the kept copy has no key but a removed copy has one, write that key and source in the log so Part B can use it as its reference.
 4. **Cases move as a whole.** Remove a case only when more than half of its questions duplicate questions of one other case. Of two such cases from sources of different priority, remove the one from the lower-priority source; otherwise remove the one with the higher duplicate share (tie: keep the case with more questions, then the longer solutions). A standalone question that duplicates a question inside a case of a higher-priority source is removed; one that duplicates a question in a lower-priority case is kept, and that case question stays too unless its whole case goes. Before you delete, check each of its questions that has no copy: if no other question in the topic tests that concept, keep the case. Log each unique question you drop and where its concept is still tested.
 5. **Delete** the removed questions or cases from their bank file. Leave every other question untouched.
 6. **Log** every removal (removed → kept, with the reason), and every group you judged not a duplicate.
@@ -82,9 +82,9 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
 ## Finish
 
 1. The format check shows 0 errors, and every question left on its *no valid key* list is logged as unresolved.
-2. `grep -rn "Answer (AI)" <BANK> | wc -l` equals the number of AI keys in the log.
+2. `grep -rn "Answer (AI)" <SCOPE> | wc -l` equals the number of AI keys the log lists for files in SCOPE.
 3. Update the Counts table in the log.
-4. Commit and push the study repository. Never copy question text into a public repository.
+4. Commit and push the study repository. Other sessions may review other topic folders at the same time: before each push run `git pull --rebase`, and if the log conflicts, keep every row from both sides. Never copy question text into a public repository.
 
 ## Report
 

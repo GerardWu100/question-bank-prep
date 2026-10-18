@@ -523,7 +523,7 @@ describe("login sessions", () => {
 });
 
 describe("exports", () => {
-  it("downloads my notes and AI notes separately as Markdown, and progress as CSV", async () => {
+  it("downloads my notes and AI notes separately as Markdown", async () => {
     const { app, store } = await buildApp();
     try {
       const library = store.createLibrary("Export test");
@@ -563,12 +563,6 @@ describe("exports", () => {
       const ai = await app.inject(`${base}/notes?origin=ai`);
       expect(ai.body).toContain("## Tutor");
       expect(ai.body).not.toContain("My text");
-      const progress = await app.inject(`${base}/progress`);
-      expect(progress.headers["content-type"]).toContain("text/csv");
-      expect(progress.body.split("\n")).toEqual([
-        "topic,source,chapter,question,stem,result,your_answer,answer_key,confidence,flagged",
-        '"01-quantitative-methods","bank","Chapter LM01 Basics","1","Two ""plus"" two?","wrong","A","B","",""',
-      ]);
     } finally {
       await app.close();
     }

@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const material =
   "# Chapter 1\n\n## Question 1\nWhat is $2 + 2$?\n\n### Choices\nA. Three\nB. Four\nC. Five\n\n### Answer\nB\n\n### Solution\nTwo pairs make four.\n";
@@ -18,7 +20,13 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   const picker = page.getByLabel("Library", { exact: true });
   if (await picker.count()) await picker.selectOption(library.id);
   await page.getByRole("button", { name: "Materials", exact: true }).click();
-  await page.getByLabel("Markdown source").fill(material);
+  // A picked folder: the bank file in a topic subfolder, plus a README that is skipped.
+  const folder = testInfo.outputPath("bank-folder");
+  mkdirSync(join(folder, "01-arithmetic"), { recursive: true });
+  writeFileSync(join(folder, "01-arithmetic", "drills.md"), material);
+  writeFileSync(join(folder, "README.md"), "# About this bank\n");
+  await page.getByLabel("Choose a folder").setInputFiles(folder);
+  await expect(page.getByText("1 Markdown file: 01-arithmetic/drills.md")).toBeVisible();
   await page
     .getByRole("button", { name: "Preview import", exact: true })
     .click();

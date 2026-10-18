@@ -57,15 +57,15 @@ To update later: `docker compose pull && docker compose up -d`. Your answers, ch
 | **Ask AI** | Free questions to the tutor, and **Review my study**: your weak concepts and the next three chapters to practise. |
 | **Notes** | Your own notes and saved tutor replies. |
 | **History** | Every tutor conversation. |
-| **Settings** | AI provider (Codex login or API key), tutor model and thinking level, folder sync, export (notes as Markdown, progress as CSV, study data as JSON) and **Import study data**. |
+| **Settings** | AI provider (Codex login or API key), tutor model and thinking level, folder sync, export (notes as Markdown, study progress as JSON) and **Import study progress**. |
 
-The app reads your question folder again each time you open it, and keeps your answer history when a file changes.
+The app reads your question folder again each time you open it, and keeps your answer history when a file changes. Without a configured folder, use **Materials → Import Markdown → Choose a folder** (a whole bank) or **Choose a file** (one bank file).
 
 **Move your progress to another install** (for example from the server to the desktop app):
 
-1. On the old install: **Settings → Export → Study data (JSON, for import)**.
+1. On the old install: **Settings → Export → Study progress (JSON)**.
 2. On the new install, load the same question bank first.
-3. **Settings → Import study data** → choose that file. The app says how many answers, flags and notes it imported, and lists questions it could not find.
+3. **Settings → Import study progress** → choose that file. The app says how many answers, flags and notes it imported, and lists questions it could not find.
 
 ## 4. Build a bank from your PDFs: three prompts
 

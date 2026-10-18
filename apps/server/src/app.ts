@@ -17,8 +17,8 @@ import {
 export const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1", "[::1]"];
 /** A login lasts this long and is renewed each time the app is opened (sliding expiry). */
 const SESSION_MILLISECONDS = 30 * 24 * 60 * 60 * 1000;
-/** Characters of each question stem in the progress CSV. */
-const PROGRESS_STEM_CHARACTERS = 160;
+/** Largest request body: a whole question-bank folder uploaded for import fits in one preview. */
+const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
 
 export async function buildApp(
   options: {
@@ -39,7 +39,7 @@ export async function buildApp(
 ) {
   const app = Fastify({
     logger: options.logger ?? false,
-    bodyLimit: 12_000_000,
+    bodyLimit: MAX_REQUEST_BYTES,
     trustProxy: options.trustProxy ?? false,
   });
   const store = new Store(options.databasePath ?? ":memory:");
@@ -638,9 +638,8 @@ export async function buildApp(
     }),
   );
   registerAIRoutes(app, store, options);
-  // Readable downloads: notes as Markdown, study progress as CSV. The importable
-  // study-data JSON is in study-data-routes.ts; a full backup of everything is
-  // `npm run backup` (README "Back up and restore").
+  // Notes as readable Markdown. Study progress (answers, flags, notes) is one importable
+  // JSON in study-data-routes.ts; a full backup of everything is `npm run backup`.
   app.get(base + "/export/notes", async (request: any, reply) => {
     const origin = request.query.origin === "ai" ? "ai" : "mine";
     const notes = store
@@ -656,40 +655,6 @@ export async function buildApp(
         `attachment; filename="${origin === "ai" ? "ai-notes" : "my-notes"}.md"`,
       );
     return `# ${origin === "ai" ? "AI notes" : "My notes"}\n\n${markdown}`;
-  });
-  app.get(base + "/export/progress", async (request: any, reply) => {
-    // One row per answered question: where it sits, what you chose, and how it went.
-    const cell = (value: unknown) =>
-      `"${String(value ?? "").replace(/"/g, '""')}"`;
-    const rows = store
-      .list(lib(request), "question", ["caseText", "choices", "solution"])
-      .filter((q) => q.active && q.state.selection)
-      .map((q) =>
-        [
-          q.topic,
-          q.source,
-          q.chapter,
-          q.title.replace(/^Question\s+/i, ""),
-          q.stem.replace(/\s+/g, " ").slice(0, PROGRESS_STEM_CHARACTERS),
-          questionStatus(q),
-          q.state.selection,
-          q.answerKey,
-          q.state.confidence,
-          q.annotation.flagged ? "yes" : "",
-        ]
-          .map(cell)
-          .join(","),
-      );
-    reply
-      .type("text/csv; charset=utf-8")
-      .header(
-        "content-disposition",
-        'attachment; filename="study-progress.csv"',
-      );
-    return [
-      "topic,source,chapter,question,stem,result,your_answer,answer_key,confidence,flagged",
-      ...rows,
-    ].join("\n");
   });
   registerStudyDataRoutes(app, store);
   registerFocusRoutes(app, store, options.provider);

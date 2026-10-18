@@ -45,14 +45,19 @@ describe("study data export and import", () => {
     await Promise.all([source.app.close(), target.app.close()]);
   });
 
-  it("accepts the progress CSV and reports questions it cannot find", async () => {
+  it("reports questions the library lacks and refuses files from elsewhere", async () => {
     const target = await studyApp();
-    const csv = 'topic,source,chapter,question,stem,result,your_answer,answer_key,confidence,flagged\n"quant","drills","Chapter 1","Q-1","What is ""2 + 2""?","correct","B","B","sure","yes"\n"quant","drills","Chapter 1","Q-9","Gone","wrong","A","B","sure",""\n';
-    const response = await target.app.inject({ method: "POST", url: `/api/libraries/${target.libraryId}/import/study-data`, payload: { operationId: "c1", content: csv } });
+    const file = JSON.stringify({ format: "question-bank-prep/study-data", version: 1, notes: [], questions: [
+      { topic: "quant", source: "drills", question: "Q-1", selection: "B", confidence: "sure", answerSequence: 1, flagged: true, note: "" },
+      { topic: "quant", source: "drills", question: "Q-9", selection: "A", confidence: "sure", answerSequence: 2, flagged: false, note: "" },
+    ] });
+    const response = await target.app.inject({ method: "POST", url: `/api/libraries/${target.libraryId}/import/study-data`, payload: { operationId: "c1", content: file } });
     expect(response.json()).toMatchObject({ answers: 1, annotations: 1, unmatched: ["quant/drills Q-9"] });
     expect(target.byTitle("Q-1").state.selection).toBe("B");
-    const bad = await target.app.inject({ method: "POST", url: `/api/libraries/${target.libraryId}/import/study-data`, payload: { operationId: "c2", content: "{}" } });
-    expect(bad.statusCode).toBe(400);
+    for (const content of ["{}", "topic,source\nquant,drills"]) {
+      const bad = await target.app.inject({ method: "POST", url: `/api/libraries/${target.libraryId}/import/study-data`, payload: { operationId: `bad-${content.length}`, content } });
+      expect(bad.statusCode).toBe(400);
+    }
     await target.app.close();
   });
 });

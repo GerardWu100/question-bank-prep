@@ -5,8 +5,6 @@ import { hash, normalizeConfidence } from "../../../packages/domain/src/index.js
 /** `format` value that marks a study-data file written by this app. */
 export const STUDY_DATA_FORMAT = "question-bank-prep/study-data";
 const STUDY_DATA_VERSION = 1;
-/** Header of the progress CSV export (`GET /export/progress`), which import also accepts. */
-const PROGRESS_CSV_HEADER = "topic,source,chapter,question";
 const MAX_NOTE_TITLE = 200;
 
 /**
@@ -50,89 +48,35 @@ const questionId = (title: string) => title.replace(/^Question\s+/i, "");
 const questionKey = (topic: string, source: string, question: string) =>
   JSON.stringify([topic, source, question]);
 
-/** Parse RFC 4180 CSV (quoted cells, doubled quotes, newlines inside quotes) into rows of cells. */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  for (let index = 0; index < text.length; index++) {
-    const character = text[index];
-    if (quoted) {
-      if (character === '"' && text[index + 1] === '"') {
-        cell += '"';
-        index++;
-      } else if (character === '"') quoted = false;
-      else cell += character;
-    } else if (character === '"') quoted = true;
-    else if (character === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (character === "\n" || character === "\r") {
-      if (character === "\r" && text[index + 1] === "\n") index++;
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
-    } else cell += character;
-  }
-  if (cell || row.length) rows.push([...row, cell]);
-  return rows;
-}
-
-/** Turn an uploaded study-data JSON or progress CSV into question and note entries. */
+/** Turn an uploaded study-data JSON into question and note entries. */
 function parseStudyData(content: string): {
   questions: QuestionEntry[];
   notes: NoteEntry[];
 } {
-  const trimmed = content.trim();
-  if (trimmed.startsWith("{")) {
-    let data: any;
-    try {
-      data = JSON.parse(trimmed);
-    } catch {
-      throw new AppError(400, "INVALID_STUDY_DATA", "The file is not valid JSON.");
-    }
-    if (data?.format !== STUDY_DATA_FORMAT || !Array.isArray(data.questions))
-      throw new AppError(400, "INVALID_STUDY_DATA", "This JSON is not a study-data export from this app.");
-    const text = (value: unknown) => (typeof value === "string" ? value : "");
-    return {
-      questions: data.questions.map((entry: any) => ({
-        topic: text(entry.topic),
-        source: text(entry.source),
-        question: questionId(text(entry.question)),
-        fingerprint: text(entry.fingerprint) || undefined,
-        selection: text(entry.selection) || null,
-        confidence: text(entry.confidence) || null,
-        answerSequence: Number.isFinite(entry.answerSequence) ? entry.answerSequence : null,
-        flagged: Boolean(entry.flagged),
-        note: text(entry.note),
-      })),
-      notes: (Array.isArray(data.notes) ? data.notes : [])
-        .filter((note: any) => typeof note?.content === "string" && note.content.trim())
-        .map((note: any) => ({ ...note, title: text(note.title) || "Imported note" })),
-    };
+  let data: any;
+  try {
+    data = JSON.parse(content);
+  } catch {
+    throw new AppError(400, "INVALID_STUDY_DATA", "The file is not valid JSON.");
   }
-  // Progress CSV: one answered question per row, in no particular order.
-  const [header, ...rows] = parseCsv(trimmed);
-  if (!header?.join(",").startsWith(PROGRESS_CSV_HEADER))
-    throw new AppError(400, "INVALID_STUDY_DATA", "Choose a study-data JSON or progress CSV exported from this app.");
-  const column = (name: string) => header.indexOf(name);
-  const [topic, source, question, selection, confidence, flagged] = ["topic", "source", "question", "your_answer", "confidence", "flagged"].map(column);
+  if (data?.format !== STUDY_DATA_FORMAT || !Array.isArray(data.questions))
+    throw new AppError(400, "INVALID_STUDY_DATA", "This JSON is not a study-data export from this app.");
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
   return {
-    questions: rows
-      .filter((row) => row.length >= header.length)
-      .map((row) => ({
-        topic: row[topic],
-        source: row[source],
-        question: questionId(row[question]),
-        selection: row[selection] || null,
-        confidence: row[confidence] || null,
-        answerSequence: null,
-        flagged: row[flagged] === "yes",
-        note: "",
-      })),
-    notes: [],
+    questions: data.questions.map((entry: any) => ({
+      topic: text(entry.topic),
+      source: text(entry.source),
+      question: questionId(text(entry.question)),
+      fingerprint: text(entry.fingerprint) || undefined,
+      selection: text(entry.selection) || null,
+      confidence: text(entry.confidence) || null,
+      answerSequence: Number.isFinite(entry.answerSequence) ? entry.answerSequence : null,
+      flagged: Boolean(entry.flagged),
+      note: text(entry.note),
+    })),
+    notes: (Array.isArray(data.notes) ? data.notes : [])
+      .filter((note: any) => typeof note?.content === "string" && note.content.trim())
+      .map((note: any) => ({ ...note, title: text(note.title) || "Imported note" })),
   };
 }
 
