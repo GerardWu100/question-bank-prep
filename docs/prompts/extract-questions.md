@@ -170,7 +170,7 @@ C. Breusch-Godfrey test.
    - `grep -rn '\[Correct\]\|\[Incorrect\]' <BANK>` returns nothing.
    - Preview a few questions with formulas, tables or charts in a Markdown viewer with KaTeX math: every formula renders, and no raw `$` shows.
 6. **Record.** Update the source's Status in `sources.md` (`in progress (<topics done>)`, or `done` when every topic it covers is finished) and add a row to the Extraction log.
-7. **Commit and push** the study repository. Keep it private when it holds copyrighted material, and never copy question text into a public repository.
+7. **Commit and push** each bank file as soon as it is finished, one file at a time, before you start the next. Keep the repository private when it holds copyrighted material, and never copy question text into a public repository.
 
 ## Report
 

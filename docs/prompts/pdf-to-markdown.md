@@ -58,5 +58,5 @@ First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). T
 
 - Never change the original PDFs.
 - Write outputs under OUTPUT_FOLDER, mirroring the folders under PDF_FOLDER. Inside each mirrored folder, use one descriptive folder per PDF with one final Markdown file and its images.
-- Work one PDF at a time: finish and check it, then commit and push its output before you start the next.
+- Work one PDF at a time: finish and check it, then commit and push its Markdown as soon as it is finished, before you start the next.
 - Keep one final version of each file. Remove only temporary files you created; keep original files and unrelated work.
