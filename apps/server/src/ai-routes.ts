@@ -25,7 +25,7 @@ const NOTE_CHARACTERS = 2000;
  * wrong and unsure questions, newest answer first: what the user got wrong and why.
  */
 function myMistakes(store: Store, libraryId: string) {
-  const answered = store.list(libraryId, 'question').filter(q => q.active && q.state.selection);
+  const answered = store.list(libraryId, 'question', ['caseText']).filter(q => q.active && q.state.selection);
   const byChapter = new Map<string, { chapter: string; answered: number; wrong: number; unsure: number }>();
   for (const q of answered) {
     const row = byChapter.get(q.chapter) ?? { chapter: q.chapter, answered: 0, wrong: 0, unsure: 0 };
@@ -80,19 +80,21 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
     }
   app.addHook('onClose', async () => { for (const controller of active.values()) controller.abort(); await Promise.allSettled(work); });
   app.get('/api/models', async () => options.provider ? options.provider.status() : { models: [], available: false, reason: 'Subscription provider is not configured.' });
-  app.get(base + '/chats', async (request: any) => ({ chats: store.list(request.params.libraryId, 'chat').map(({ messages, ...chat }) => chat) }));
+  // Chat lists and lookups skip messages, which hold every reply ever streamed.
+  const chatSummaries = (libraryId: string) => store.list(libraryId, 'chat', ['messages']);
+  app.get(base + '/chats', async (request: any) => ({ chats: chatSummaries(request.params.libraryId) }));
   app.post(base + '/chats', async (request: any) => {
     const libraryId = request.params.libraryId; const body = request.body ?? {}; store.library(libraryId);
     if (body.questionId) {
       store.get(libraryId, body.questionId, 'question');
       if (body.setId) store.question(libraryId, body.questionId, body.setId);
-      const prior = store.list(libraryId, 'chat').find(chat => chat.questionId === body.questionId);
-      if (prior) return visibleChat(libraryId, store.put(libraryId, 'chat', { ...prior, setId: body.setId ?? null }), body.setId);
+      const prior = chatSummaries(libraryId).find(chat => chat.questionId === body.questionId);
+      if (prior) return visibleChat(libraryId, store.put(libraryId, 'chat', { ...store.get(libraryId, prior.id, 'chat'), setId: body.setId ?? null }), body.setId);
     }
     // A reading chat belongs to one section of one material file and is reopened there.
     if (body.readingPath) {
-      const prior = store.list(libraryId, 'chat').find(chat => chat.readingPath === body.readingPath && chat.readingTitle === (body.readingTitle ?? ''));
-      if (prior) return prior;
+      const prior = chatSummaries(libraryId).find(chat => chat.readingPath === body.readingPath && chat.readingTitle === (body.readingTitle ?? ''));
+      if (prior) return store.get(libraryId, prior.id, 'chat');
       return store.put(libraryId, 'chat', { id: id(), title: String(body.title || body.readingTitle || 'Material').slice(0, 200), kind: 'reading', readingPath: String(body.readingPath), readingTitle: String(body.readingTitle ?? ''), questionId: null, setId: null, messages: [] });
     }
     return store.put(libraryId, 'chat', { id: id(), title: String(body.title || 'Ask AI').slice(0, 200), kind: body.questionId ? 'tutor' : 'ask', questionId: body.questionId ?? null, setId: body.setId ?? null, messages: [] });
@@ -199,13 +201,14 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
         toolSummaries.push({ name, status: 'completed' });
         return result;
       };
-      const persist = () => {
+      // One transaction per save: the chat and run share one disk sync every 200 ms.
+      const persist = () => store.db.transaction(() => {
         const saved = store.get(libraryId, chat.id, 'chat');
         const message = saved.messages.find((message: any) => message.id === run.id);
         Object.assign(message, { content: output, markdown: output, reasoning, status, error, model: run.model, provider: 'openai-codex', sources: [...sources.values()], tools: toolSummaries, policyVersion: 1 });
         store.put(libraryId, 'chat', saved);
         store.put(libraryId, 'run', { ...run, started: true, status, error, sources: [...sources.values()], tools: toolSummaries });
-      };
+      })();
       try {
         if (!options.provider) throw new Error('Subscription provider is unavailable. No API-key fallback is used.');
         const history = chat.messages.slice(0, -2).filter((message: any) => message.status === 'completed' && (!hint || message.mode === 'hint' && message.setId === body.setId)).slice(-MAX_HISTORY_MESSAGES).map((message: any) => ({ role: message.role, content: message.content.slice(0, 4000) }));

@@ -42,11 +42,15 @@ export function registerMaterialRoutes(
         acceptWarnings,
         identityMappings,
       );
-      for (const file of store.list(lib, "file"))
+      // Summaries decide; only a file that changes is read in full and written back.
+      for (const file of store.list(lib, "file", ["content"]))
         if (file.local && file.active && !previewHashes.has(file.path))
-          store.deactivateFile(lib, file);
+          store.deactivateFile(lib, store.get(lib, file.id, "file"));
         else if (previewHashes.has(file.path) && !file.local)
-          store.put(lib, "file", { ...file, local: true });
+          store.put(lib, "file", {
+            ...store.get(lib, file.id, "file"),
+            local: true,
+          });
       return result;
     })();
   app.get("/api/material-root", async () => ({ configured: Boolean(root) }));
@@ -58,7 +62,7 @@ export function registerMaterialRoutes(
     const files = await scanRoot(requireRoot());
     const fileHashes = new Map(files.map((f) => [f.path, hash(f.content)]));
     const activeLocal = store
-      .list(lib, "file")
+      .list(lib, "file", ["content"])
       .filter((f: any) => f.local && f.active);
     if (
       activeLocal.length === files.length &&
@@ -178,7 +182,7 @@ export function registerMaterialRoutes(
     if (!entry)
       throw new AppError(404, "NOT_FOUND", "Recovery entry not found.");
     const file = store
-      .list(request.params.libraryId, "file")
+      .list(request.params.libraryId, "file", ["content"])
       .find((f) => f.local && f.path === entry.path);
     if (!file)
       throw new AppError(

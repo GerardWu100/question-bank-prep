@@ -43,7 +43,20 @@ registerMaterialRoutes(app, store, materialRoot, dataDirectory);
 registerReadingRoutes(app, readingRoot);
 const webDirectory = resolve(root, "apps/web/dist");
 if (existsSync(webDirectory)) {
-  await app.register(staticFiles, { root: webDirectory });
+  await app.register(staticFiles, {
+    root: webDirectory,
+    // Serve the .br/.gz copies written by scripts/compress-build.mjs when the browser accepts them.
+    preCompressed: true,
+    // Build files under /assets/ have content hashes in their names, so they never change:
+    // the browser keeps them for a year. Everything else (index.html) is revalidated.
+    setHeaders: (response, path) =>
+      response.header(
+        "cache-control",
+        path.includes("/assets/")
+          ? "public, max-age=31536000, immutable"
+          : "no-cache",
+      ),
+  });
   // A missing build file is a 404, not the page: an old tab then fails clearly.
   app.setNotFoundHandler((request, reply) =>
     request.url.startsWith("/api/") || request.url.startsWith("/assets/")

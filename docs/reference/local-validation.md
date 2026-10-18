@@ -10,7 +10,7 @@ Date: 2026-10-15. User requested implementation of the supplied plan, relaxed ca
 - Configured-root path/symlink rejection, stale preview refusal, external-file conflict checks, local edit/import and journal inspection.
 - Chromium practice flow: import, wrong answer, correction, confidence, annotations, restart of page state, and blank new set retaining overall status. Mobile page overflow checked.
 - Live subscription response using the exact requested Luna model and a completed tool round trip. No credential refresh or writes, and no API-key fallback.
-- Synthetic 10,000-question import: 7.5 s; indexed search p95: 3.5 ms; peak RSS: 409 MiB. Native machine-specific result.
+- Synthetic 10,000-question import: 7.5 s; indexed search p95: 3.5 ms; peak RSS: 409 MiB. Native machine-specific result. Re-measured on Linux/Node 22 on 2026-10-17 after the performance pass: 4.5 s import (11.7 s before it on that machine), search p95 about 8 ms, peak RSS about 280 MiB.
 
 ## Docker validation, 2026-10-16
 

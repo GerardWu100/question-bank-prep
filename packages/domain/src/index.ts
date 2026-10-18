@@ -104,6 +104,12 @@ export function normalizeConfidence(
       : "sure"
     : null;
 }
+/** One frozen Markdown parser shared by every call; building it per file repeats plugin setup. */
+const markdownParser = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkMath)
+  .freeze();
 const escapeRegExp = (text: string) =>
   text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const QUESTION_HEADING = /^question\s+\S/i;
@@ -144,11 +150,7 @@ export function parseQuestions(
   path = "",
   labels = ["A", "B", "C", "D", "E"],
 ): { questions: ParsedQuestion[]; issues: ImportIssue[] } {
-  const tree: any = unified()
-    .use(remarkParse)
-    .use(remarkGfm)
-    .use(remarkMath)
-    .parse(content);
+  const tree: any = markdownParser.parse(content);
   // Top-level heading nodes in source order, as { title, depth, start, end, line }.
   const headings = (tree.children as any[])
     .filter((node) => node.type === "heading")

@@ -4,7 +4,7 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { AppError, id, Store } from "./store.js";
+import { AppError, id, QUESTION_TEXT_FIELDS, Store } from "./store.js";
 import {
   hash,
   needsReview,
@@ -46,8 +46,8 @@ export async function buildApp(
   // update keeps you signed in.
   const sessionExpiry = (token: string) =>
     (
-      store.db
-        .prepare("SELECT expires_at FROM sessions WHERE token_hash=?")
+      store
+        .sql("SELECT expires_at FROM sessions WHERE token_hash=?")
         .get(hash(token)) as { expires_at: number } | undefined
     )?.expires_at ?? 0;
   const signedIn = (request: any) =>
@@ -64,8 +64,8 @@ export async function buildApp(
     });
   /** Start or extend a session: store its new expiry and refresh the cookie. */
   const renewSession = (request: any, reply: any, token: string) => {
-    store.db
-      .prepare(
+    store
+      .sql(
         "INSERT INTO sessions(token_hash, expires_at) VALUES(?, ?) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at",
       )
       .run(hash(token), Date.now() + SESSION_MILLISECONDS);
@@ -219,9 +219,7 @@ export async function buildApp(
         !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
       )
         throw new AppError(401, "INVALID_PASSWORD", "Password is incorrect.");
-      store.db
-        .prepare("DELETE FROM sessions WHERE expires_at < ?")
-        .run(Date.now());
+      store.sql("DELETE FROM sessions WHERE expires_at < ?").run(Date.now());
       renewSession(request, reply, randomBytes(32).toString("hex"));
       return { authenticated: true };
     },
@@ -230,8 +228,8 @@ export async function buildApp(
     "/api/session",
     { config: { public: true } },
     async (request, reply) => {
-      store.db
-        .prepare("DELETE FROM sessions WHERE token_hash=?")
+      store
+        .sql("DELETE FROM sessions WHERE token_hash=?")
         .run(hash(request.cookies.study_session ?? ""));
       reply.clearCookie("study_session");
       return { authenticated: false };
@@ -296,8 +294,8 @@ export async function buildApp(
             "INVALID_NAME",
             "Choose a library name under 200 characters.",
           );
-        store.db
-          .prepare(
+        store
+          .sql(
             "UPDATE libraries SET name=?,settings=?,archived=?,version=version+1,generation=generation+1 WHERE id=?",
           )
           .run(
@@ -313,7 +311,9 @@ export async function buildApp(
   );
   app.get(base + "/overview", async (request: any) => {
     const libraryId = lib(request);
-    const questions = store.list(libraryId, "question").filter((q) => q.active);
+    const questions = store
+      .list(libraryId, "question", QUESTION_TEXT_FIELDS)
+      .filter((q) => q.active);
     const counts: Record<string, number> = {
       unanswered: 0,
       wrong: 0,
@@ -354,13 +354,13 @@ export async function buildApp(
           a.chapter.localeCompare(b.chapter),
       ),
       sets: store
-        .list(libraryId, "set")
-        .map(({ id, title, cursor, questionIds, filters }) => ({
+        .setSummaries(libraryId)
+        .map(({ id, title, cursor, filters, count }) => ({
           id,
           title,
           cursor,
           filters,
-          count: questionIds.length,
+          count,
         })),
     };
   });
@@ -395,10 +395,10 @@ export async function buildApp(
       return annotation;
     }),
   );
-  app.post(base + "/sets/preview", async (request: any) => {
-    const questionIds = store.select(lib(request), request.body);
-    return { questionIds, count: questionIds.length };
-  });
+  // The client shows only the count; the IDs of a 10,000-question set are not sent.
+  app.post(base + "/sets/preview", async (request: any) => ({
+    count: store.select(lib(request), request.body).length,
+  }));
   app.post(base + "/sets", async (request: any) =>
     store.mutation(request, () => {
       const questionIds = store.select(lib(request), request.body);
@@ -428,7 +428,7 @@ export async function buildApp(
     }),
   );
   app.get(base + "/sets", async (request: any) => ({
-    sets: store.list(lib(request), "set"),
+    sets: store.setSummaries(lib(request)),
   }));
   app.get(base + "/sets/:id", async (request: any) =>
     store.presentSet(
@@ -483,7 +483,7 @@ export async function buildApp(
     ),
   );
   app.get(base + "/files", async (request: any) => ({
-    files: store.list(lib(request), "file").map(({ content, ...file }) => file),
+    files: store.list(lib(request), "file", ["content"]),
   }));
   app.get(base + "/files/:id", async (request: any) =>
     store.get(
@@ -573,7 +573,7 @@ export async function buildApp(
           .map((f) => [f.questionId, f]),
       );
       for (const q of store
-        .list(libraryId, "question")
+        .list(libraryId, "question", QUESTION_TEXT_FIELDS)
         .filter((q) => q.active)) {
         const result = questionStatus(q);
         // A question that left wrong/unsure keeps its item; its link versions make it stale.
@@ -660,7 +660,7 @@ export async function buildApp(
     const cell = (value: unknown) =>
       `"${String(value ?? "").replace(/"/g, '""')}"`;
     const rows = store
-      .list(lib(request), "question")
+      .list(lib(request), "question", ["caseText", "choices", "solution"])
       .filter((q) => q.active && q.state.selection)
       .map((q) =>
         [

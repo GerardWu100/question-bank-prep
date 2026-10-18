@@ -102,12 +102,25 @@ function automaticMatch(
     ? sameContentAndHeading[0]
     : undefined;
 }
-const groupByFile = (questions: any[]) => {
-  const byFile = new Map<string, any[]>();
-  for (const q of questions)
-    byFile.set(q.fileId, [...(byFile.get(q.fileId) ?? []), q]);
-  return byFile;
-};
+/**
+ * Large question fields that summaries leave out: the case passage, choices, solution
+ * and stem. Lists that only count, filter or sort read questions without them.
+ */
+export const QUESTION_TEXT_FIELDS = ["caseText", "choices", "solution", "stem"];
+/** Fields a set summary leaves out: the per-question items and ID list. */
+const SET_ITEM_FIELDS = ["items", "questionIds"];
+/** Group items into lists by a key, keeping input order within each list. */
+function groupBy<T, K>(items: T[], key: (item: T) => K) {
+  const groups = new Map<K, T[]>();
+  for (const item of items) {
+    const group = groups.get(key(item));
+    if (group) group.push(item);
+    else groups.set(key(item), [item]);
+  }
+  return groups;
+}
+/** Kinds that have a full-text search entry. */
+const INDEXED_KINDS = ["question", "file", "note"];
 
 export class Store {
   db: Database.Database;
@@ -122,10 +135,74 @@ export class Store {
       .exec(`CREATE TABLE IF NOT EXISTS libraries(id TEXT PRIMARY KEY, name TEXT NOT NULL, sequence INTEGER NOT NULL DEFAULT 0, generation INTEGER NOT NULL DEFAULT 0, settings TEXT NOT NULL DEFAULT '{}', archived INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, library_id TEXT NOT NULL REFERENCES libraries(id), kind TEXT NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS records_kind ON records(library_id,kind);
+      -- Questions by file: imports and label sync read one file's questions without a scan.
+      CREATE INDEX IF NOT EXISTS records_question_file ON records(library_id,json_extract(data,'$.fileId')) WHERE kind='question';
       CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, response TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
       CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(id UNINDEXED,library_id UNINDEXED,kind UNINDEXED,title,text);
       CREATE TABLE IF NOT EXISTS schema_version(version INTEGER PRIMARY KEY); INSERT OR IGNORE INTO schema_version VALUES(1);`);
+    this.alignSearchIndex();
+  }
+  /**
+   * Keep each search entry's rowid equal to its record's rowid. `id` is an UNINDEXED
+   * FTS5 column, so deleting an entry by id scans the whole index (an import of n
+   * questions then costs n²); by rowid it is one lookup. A database written before this
+   * rule, or renumbered by VACUUM, is reindexed once here.
+   */
+  private alignSearchIndex() {
+    const misaligned = this.db
+      .prepare(
+        "SELECT 1 FROM search_index s LEFT JOIN records r ON r.rowid=s.rowid WHERE r.id IS NOT s.id LIMIT 1",
+      )
+      .get();
+    if (!misaligned) return;
+    const rows = this.db
+      .prepare(
+        `SELECT rowid,library_id,kind,data FROM records WHERE kind IN (${INDEXED_KINDS.map(() => "?").join(",")})`,
+      )
+      .all(...INDEXED_KINDS) as any[];
+    this.db.transaction(() => {
+      this.db.exec("DELETE FROM search_index");
+      for (const row of rows)
+        this.indexRecord(
+          row.rowid,
+          row.library_id,
+          row.kind,
+          JSON.parse(row.data),
+        );
+    })();
+  }
+  /** Insert the search entry for one record, when its kind and state are searchable. */
+  private indexRecord(
+    rowid: number,
+    libraryId: string,
+    kind: string,
+    value: any,
+  ) {
+    const insert = this.sql(
+      "INSERT INTO search_index(rowid,id,library_id,kind,title,text) VALUES(?,?,?,?,?,?)",
+    );
+    if (kind === "question" && value.active)
+      insert.run(
+        rowid,
+        value.id,
+        libraryId,
+        kind,
+        value.title,
+        `${value.caseText}\n${value.stem}\n${value.choices.map((choice: any) => `${choice.label}. ${choice.text}`).join("\n")}`,
+      );
+    if (
+      (kind === "file" && value.active && value.type === "note") ||
+      kind === "note"
+    )
+      insert.run(
+        rowid,
+        value.id,
+        libraryId,
+        kind,
+        value.path ?? value.title,
+        value.content,
+      );
   }
   /** Compile each SQL text once; import loops run the same statements thousands of times. */
   sql(text: string) {
@@ -165,14 +242,38 @@ export class Store {
       libraryId,
     );
   }
-  list(libraryId: string, kind: string): any[] {
+  /**
+   * All records of one kind. `omit` names top-level fields SQLite drops before the JSON
+   * reaches JavaScript (for example a file's `content`), which saves parsing and memory
+   * when a caller only counts or filters. Never `put` a record read with `omit`.
+   */
+  list(libraryId: string, kind: string, omit: string[] = []): any[] {
+    this.library(libraryId);
+    const column = omit.length
+      ? `json_remove(data,${omit.map((field) => `'$.${field}'`).join(",")})`
+      : "data";
+    return (
+      this.sql(
+        `SELECT ${column} AS data FROM records WHERE library_id=? AND kind=?`,
+      ).all(libraryId, kind) as any[]
+    ).map((r) => JSON.parse(r.data));
+  }
+  /** Full questions of one file; other files' questions are never parsed. */
+  questionsInFile(libraryId: string, fileId: string): any[] {
+    return (
+      this.sql(
+        "SELECT data FROM records WHERE library_id=? AND kind='question' AND json_extract(data,'$.fileId')=?",
+      ).all(libraryId, fileId) as any[]
+    ).map((r) => JSON.parse(r.data));
+  }
+  /** Set summaries for lists: everything but items, plus `count` (number of questions). */
+  setSummaries(libraryId: string): any[] {
     this.library(libraryId);
     return (
-      this.sql("SELECT data FROM records WHERE library_id=? AND kind=?").all(
-        libraryId,
-        kind,
-      ) as any[]
-    ).map((r) => JSON.parse(r.data));
+      this.sql(
+        `SELECT json_remove(data,${SET_ITEM_FIELDS.map((field) => `'$.${field}'`).join(",")}) AS data, json_array_length(data,'$.questionIds') AS count FROM records WHERE library_id=? AND kind='set'`,
+      ).all(libraryId) as any[]
+    ).map((r) => ({ ...JSON.parse(r.data), count: r.count }));
   }
   get(libraryId: string, recordId: string, kind?: string): any {
     const row = this.sql(
@@ -203,31 +304,14 @@ export class Store {
     kind: "question" | "file" | "note",
     value: any,
   ) {
-    this.put(libraryId, kind, value);
-    this.sql("DELETE FROM search_index WHERE id=? AND library_id=?").run(
-      value.id,
-      libraryId,
-    );
-    const insert = this.sql("INSERT INTO search_index VALUES(?,?,?,?,?)");
-    if (kind === "question" && value.active)
-      insert.run(
-        value.id,
-        libraryId,
-        kind,
-        value.title,
-        `${value.caseText}\n${value.stem}\n${value.choices.map((choice: any) => `${choice.label}. ${choice.text}`).join("\n")}`,
-      );
-    if (
-      (kind === "file" && value.active && value.type === "note") ||
-      kind === "note"
-    )
-      insert.run(
-        value.id,
-        libraryId,
-        kind,
-        value.path ?? value.title,
-        value.content,
-      );
+    // An upsert keeps the record's rowid, which is also its search entry's rowid.
+    const { rowid } = this.sql(
+      "INSERT INTO records(id,library_id,kind,data) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data RETURNING rowid",
+    ).get(value.id, libraryId, kind, JSON.stringify(value)) as {
+      rowid: number;
+    };
+    this.sql("DELETE FROM search_index WHERE rowid=?").run(rowid);
+    this.indexRecord(rowid, libraryId, kind, value);
     return value;
   }
   search(libraryId: string, query: string) {
@@ -261,20 +345,17 @@ export class Store {
   deleteNote(libraryId: string, noteId: string) {
     this.get(libraryId, noteId, "note");
     this.db.transaction(() => {
-      this.sql(
-        "DELETE FROM records WHERE id=? AND library_id=? AND kind='note'",
-      ).run(noteId, libraryId);
-      this.sql("DELETE FROM search_index WHERE id=? AND library_id=?").run(
-        noteId,
-        libraryId,
-      );
+      const { rowid } = this.sql(
+        "DELETE FROM records WHERE id=? AND library_id=? AND kind='note' RETURNING rowid",
+      ).get(noteId, libraryId) as { rowid: number };
+      this.sql("DELETE FROM search_index WHERE rowid=?").run(rowid);
     })();
   }
   /** Mark a file and its questions removed; responses stay as removed-source history. */
   deactivateFile(libraryId: string, file: any, questions?: any[]) {
     this.putIndexed(libraryId, "file", { ...file, active: false });
     for (const question of questions ??
-      this.list(libraryId, "question").filter((q) => q.fileId === file.id))
+      this.questionsInFile(libraryId, file.id))
       this.putIndexed(libraryId, "question", { ...question, active: false });
   }
   /** Visible Focus items. Staleness is derived from each link's observed versions. */
@@ -400,13 +481,30 @@ export class Store {
         "Each import path must be unique.",
       );
     const issues = parsed.flatMap((file) => file.issues);
-    const oldQuestions = this.list(libraryId, "question").filter(
-      (question) => question.active,
-    );
+    // Matching needs stems and choices but never case passages or solutions.
+    const oldQuestions = this.list(libraryId, "question", [
+      "caseText",
+      "solution",
+    ]).filter((question) => question.active);
     const fileIdByPath = new Map(
-      this.list(libraryId, "file").map((file) => [file.path, file.id]),
+      this.list(libraryId, "file", ["content"]).map((file) => [
+        file.path,
+        file.id,
+      ]),
     );
-    const activeByFile = groupByFile(oldQuestions);
+    const activeByFile = groupBy(oldQuestions, (q) => q.fileId);
+    // Review candidates share a title or a fingerprint; maps replace a scan of every
+    // old question per incoming question (10,000 × 10,000 comparisons on a re-import).
+    const oldByTitle = groupBy(oldQuestions, (q) => q.title);
+    const oldByFingerprint = groupBy(oldQuestions, (q) => q.fingerprint);
+    const oldOrder = new Map(oldQuestions.map((q, index) => [q, index]));
+    const reviewCandidates = (question: any) =>
+      [
+        ...new Set([
+          ...(oldByTitle.get(question.title) ?? []),
+          ...(oldByFingerprint.get(question.fingerprint) ?? []),
+        ]),
+      ].sort((a, b) => oldOrder.get(a)! - oldOrder.get(b)!);
     // automatic: the old question each incoming one continues, keyed by question object.
     const automatic = new Map<any, any>();
     for (const file of parsed) {
@@ -440,20 +538,18 @@ export class Store {
               title: automatic.get(question).title,
             }
           : null,
-        candidates: oldQuestions
-          .filter(
-            (old) =>
-              old.title === question.title ||
-              old.fingerprint === question.fingerprint,
-          )
-          .map((old) => ({
-            id: old.id,
-            title: old.title,
-            stem: old.stem,
-            choicesCompatible:
-              JSON.stringify(old.choices) === JSON.stringify(question.choices),
-            unchangedContent: old.fingerprint === question.fingerprint,
-          })),
+        // An automatic match needs no decision, so it carries no candidates to review.
+        candidates: (automatic.has(question)
+          ? []
+          : reviewCandidates(question)
+        ).map((old) => ({
+          id: old.id,
+          title: old.title,
+          stem: old.stem,
+          choicesCompatible:
+            JSON.stringify(old.choices) === JSON.stringify(question.choices),
+          unchangedContent: old.fingerprint === question.fingerprint,
+        })),
       })),
     );
     const preview = {
@@ -509,7 +605,7 @@ export class Store {
           "Fix structural errors and explicitly accept warnings.",
           { issues: preview.issues },
         );
-      const existingFiles = this.list(libraryId, "file");
+      const existingFiles = this.list(libraryId, "file", ["content"]);
       const incomingHashCounts = new Map<string, number>();
       for (const file of preview.files)
         incomingHashCounts.set(
@@ -541,11 +637,21 @@ export class Store {
             "INVALID_MAPPING",
             "Identity mapping does not belong to this preview.",
           );
-      // Load questions and set items once. Before: one full parse per file; after: one per commit.
-      const activeByFile = groupByFile(
-        this.list(libraryId, "question").filter((q) => q.active),
-      );
-      const sets = this.list(libraryId, "set");
+      // Sets are read only when a key changes; then each set's items are indexed once.
+      let setItems: Map<any, Map<string, any>> | undefined;
+      const changedSets = new Set<any>();
+      const itemsOf = (questionId: string) => {
+        setItems ??= new Map(
+          this.list(libraryId, "set").map((set) => [
+            set,
+            new Map(set.items.map((item: any) => [item.questionId, item])),
+          ]),
+        );
+        return [...setItems].flatMap(([set, items]) => {
+          const item = items.get(questionId);
+          return item ? [{ set, item }] : [];
+        });
+      };
       // Identities claimed by any incoming question; a later file must not deactivate them.
       const claimed = new Set<string>();
       for (const incoming of preview.files) {
@@ -568,7 +674,11 @@ export class Store {
           continue;
         const fileId = file?.id ?? id();
         const revision = (file?.version ?? 0) + 1;
-        const previousQuestions = activeByFile.get(fileId) ?? [];
+        // Only changed files are read; an unchanged file was skipped above.
+        const previousQuestions = this.questionsInFile(
+          libraryId,
+          fileId,
+        ).filter((q) => q.active);
         incoming.questions.forEach((parsed: any, position: number) => {
           const explicit = identityMappings[`${incoming.path}:${parsed.line}`];
           const old = explicit
@@ -625,19 +735,15 @@ export class Store {
           };
           this.putIndexed(libraryId, "question", question);
           if (old && old.answerKey !== parsed.answerKey)
-            for (const set of sets) {
-              const item = set.items.find(
-                (item: any) => item.questionId === old.id,
-              );
-              if (item?.submitted) {
+            for (const { set, item } of itemsOf(old.id))
+              if (item.submitted) {
                 item.confidence = normalizeConfidence(
                   item.selection,
                   parsed.answerKey,
                   item.confidence,
                 );
-                this.put(libraryId, "set", set);
+                changedSets.add(set);
               }
-            }
           if (!unchanged)
             this.put(libraryId, "questionRevision", {
               ...question,
@@ -666,6 +772,7 @@ export class Store {
           fileId,
         });
       }
+      for (const set of changedSets) this.put(libraryId, "set", set);
       this.bumpGeneration(libraryId);
       const result = {
         importRevision: library.generation + 1,
@@ -675,22 +782,30 @@ export class Store {
           ).get(libraryId) as any
         ).count,
       };
-      this.put(libraryId, "import", { ...preview, committed: result });
+      // The new generation makes every other preview stale, and this one is done: keep
+      // only what a retry or a stale-preview check reads, not the parsed files.
+      this.put(libraryId, "import", {
+        ...preview,
+        files: [],
+        identityProposals: [],
+        committed: result,
+      });
+      this.sql(
+        "UPDATE records SET data=json_set(data,'$.files',json('[]'),'$.identityProposals',json('[]')) WHERE library_id=? AND kind='import' AND json_array_length(data,'$.files')>0",
+      ).run(libraryId);
       return result;
     })();
   }
   /** Re-derive topic/source labels from file paths; unchanged files skip import, so sync does this. */
   syncPathLabels(libraryId: string) {
-    const files = new Map(
-      this.list(libraryId, "file").map((file) => [file.id, file]),
+    // One UPDATE per file inside SQLite; questions are not parsed in JavaScript.
+    const relabel = this.sql(
+      "UPDATE records SET data=json_set(data,'$.topic',@topic,'$.source',@source) WHERE library_id=@libraryId AND kind='question' AND json_extract(data,'$.fileId')=@fileId AND (json_extract(data,'$.topic') IS NOT @topic OR json_extract(data,'$.source') IS NOT @source)",
     );
     this.db.transaction(() => {
-      for (const q of this.list(libraryId, "question")) {
-        const file = files.get(q.fileId);
-        if (!file) continue;
+      for (const file of this.list(libraryId, "file", ["content"])) {
         const labels = pathLabels(file.path);
-        if (q.topic !== labels.topic || q.source !== labels.source)
-          this.put(libraryId, "question", { ...q, ...labels });
+        relabel.run({ libraryId, fileId: file.id, ...labels });
       }
     })();
   }
@@ -699,13 +814,28 @@ export class Store {
    * this set shows its latest answer from any set, so progress is remembered everywhere.
    */
   presentSet(libraryId: string, set: any) {
+    // Only the three grading fields of the set's questions, read in one query.
+    const grading = new Map(
+      (
+        this.sql(
+          "SELECT id, json_extract(data,'$.answerKey') AS answerKey, json_extract(data,'$.state.selection') AS selection, json_extract(data,'$.state.confidence') AS confidence FROM records WHERE library_id=? AND kind='question' AND id IN (SELECT value FROM json_each(?))",
+        ).all(libraryId, JSON.stringify(set.questionIds)) as any[]
+      ).map((row) => [row.id, row]),
+    );
+    const { items, ...summary } = set;
     return {
-      ...set,
-      itemStatuses: set.items.map((item: any) => {
-        const q = this.get(libraryId, item.questionId, "question");
+      ...summary,
+      itemStatuses: items.map((item: any) => {
+        const q = grading.get(item.questionId);
+        if (!q)
+          throw new AppError(
+            404,
+            "NOT_FOUND",
+            "Record not found in this library.",
+          );
         return item.submitted
           ? grade(item.selection, q.answerKey, item.confidence)
-          : questionStatus(q);
+          : grade(q.selection, q.answerKey, q.confidence);
       }),
     };
   }
@@ -837,7 +967,12 @@ export class Store {
         "INVALID_FILTER",
         "Choose valid question statuses.",
       );
-    let questions = this.list(libraryId, "question").filter((q) => q.active);
+    // Filters read the stem (text query) but no other long text.
+    let questions = this.list(libraryId, "question", [
+      "caseText",
+      "choices",
+      "solution",
+    ]).filter((q) => q.active);
     const focusIds = filters.inFocus
       ? new Set(
           this.focus(libraryId, new Map(questions.map((q) => [q.id, q])))
@@ -863,7 +998,10 @@ export class Store {
     );
     if (body.order === "source" || body.order === undefined) {
       const pathById = new Map(
-        this.list(libraryId, "file").map((file) => [file.id, file.path]),
+        this.list(libraryId, "file", ["content"]).map((file) => [
+          file.id,
+          file.path,
+        ]),
       );
       questions.sort(
         (a, b) =>

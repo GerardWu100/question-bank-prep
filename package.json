@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx apps/server/src/index.ts",
     "dev:web": "vite --config apps/web/vite.config.ts",
-    "build": "vite build --config apps/web/vite.config.ts",
+    "build": "vite build --config apps/web/vite.config.ts && node scripts/compress-build.mjs",
     "start": "tsx apps/server/src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

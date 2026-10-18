@@ -254,6 +254,13 @@ export function registerReadingRoutes(
         "Set READING_ROOT in the local .env file first.",
       );
     const target = await readingPath(root, String(request.query.path ?? ""));
+    // Size and modification time identify a version: an unchanged file is answered with
+    // 304 Not Modified, so reopening a 4 MB note does not resend it.
+    const { size, mtimeMs } = await lstat(target);
+    const etag = `W/"${size}-${Math.floor(mtimeMs)}"`;
+    reply.header("etag", etag).header("cache-control", "no-cache");
+    if (request.headers["if-none-match"] === etag)
+      return reply.code(304).send();
     reply.type(READABLE_TYPES[extname(target).toLowerCase()]);
     return readFile(target);
   });
