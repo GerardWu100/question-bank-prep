@@ -74,13 +74,14 @@ The [user guide](docs/user/user-guide.md) walks through both, and the app's **Gu
 
 ## Build a bank from your PDFs
 
-You do not type questions in. Give these three prompts to an AI coding agent (Claude Code, Codex or similar) in your own study folder; they work for any exam.
+You do not type questions in. Give these prompts to an AI coding agent (Claude Code, Codex or similar) in your own study folder; they work for any exam.
 
 | Step | Prompt | What you get |
 |---|---|---|
 | 1 | [PDF → Markdown](docs/prompts/pdf-to-markdown.md) | Faithful Markdown notes, shown on the Materials page |
 | 2 | [Extract questions](docs/prompts/extract-questions.md) | Questions copied word for word into `question_bank/<topic>/<source>.md` |
-| 3 | [Review the bank](docs/prompts/review-questions.md) | Duplicates removed and missing answer keys added, marked as AI-written |
+| 3 | [Review the bank](docs/prompts/review-questions.md) | Duplicates removed, missing keys and short explanations added, marked as AI-written |
+| 4 (optional) | [Redraw charts](docs/prompts/redraw-charts.md) | Charts left as text or page crops redrawn by code, in notes and bank |
 
 A question is ordinary Markdown ([format guide](docs/user/question-format.md)):
 

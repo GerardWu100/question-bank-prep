@@ -16,7 +16,7 @@ import { api, ApiError, operation } from "./api";
 const Markdown = lazy(() =>
   import("./Markdown").then((module) => ({ default: module.Markdown })),
 );
-/** The user guide (with the three prompts) loads only when opened. */
+/** The user guide (with the bank-building prompts) loads only when opened. */
 const Guide = lazy(() => import("./Guide"));
 import "@fontsource-variable/inter";
 import "@fontsource-variable/source-serif-4";

@@ -70,15 +70,16 @@ The app reads your question folder again each time you open it, and keeps your a
 2. On the new install, load the same question bank first.
 3. **Settings → Import study progress** → choose that file. The app says how many answers, flags and notes it imported, and lists questions it could not find.
 
-## 4. Build a bank from your PDFs: three prompts
+## 4. Build a bank from your PDFs: three prompts and an optional fourth
 
-You do not type questions in. An AI coding agent (Codex, Claude Code or similar) does it with three prompts. Keep your study folder in its own **private** Git repository, because it holds copyrighted material.
+You do not type questions in. An AI coding agent (Codex, Claude Code or similar) does it with three prompts, plus an optional fourth that fixes charts. Keep your study folder in its own **private** Git repository, because it holds copyrighted material.
 
 | Step | Prompt | Input | Output |
 |---|---|---|---|
 | 1 | [PDF → Markdown](../prompts/pdf-to-markdown.md) | `materials/` (PDFs) | `md_materials/`: faithful notes with formulas and tables |
 | 2 | [Extract questions](../prompts/extract-questions.md) | `md_materials/` | `question_bank/<NN-topic>/<source>.md`: questions copied word for word |
-| 3 | [Review the bank](../prompts/review-questions.md) | `question_bank/` | Duplicates removed; missing keys added under `Answer (AI)` |
+| 3 | [Review the bank](../prompts/review-questions.md) | `question_bank/` | Duplicates removed; missing keys added under `Answer (AI)`; short explanations under `Intuition (AI)` |
+| 4 (optional) | [Redraw charts](../prompts/redraw-charts.md) | `md_materials/`, `question_bank/` | Charts left as text art, text descriptions or page crops redrawn by code, in the notes and the bank |
 
 How to run each prompt:
 
@@ -86,7 +87,7 @@ How to run each prompt:
 2. Fill in its **Settings** block: your repository URL, exam name, folders, and the file that lists your topics and chapters (the "outline").
 3. Paste it into a new agent session. The agent pulls the repository, does the job, checks its own work, and commits and pushes.
 4. For prompt 2, run one job per session: one source × one topic. Several sessions can run in parallel.
-5. Run the prompts in order 1 → 2 → 3. Run prompt 3 again after you add a new source.
+5. Run the prompts in order 1 → 2 → 3. Run prompt 3 again after you add a new source. Run prompt 4 only if some charts still show as text or blurry page crops.
 
 Then point the app's `question_bank` and `md_materials` volumes at that repository's folders. An AI key never replaces a key from the source; the app shows it as AI-written.
 

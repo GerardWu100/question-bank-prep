@@ -4,13 +4,15 @@ import guide from "./guide.md?raw";
 import pdfToMarkdown from "../../../docs/prompts/pdf-to-markdown.md?raw";
 import extractQuestions from "../../../docs/prompts/extract-questions.md?raw";
 import reviewQuestions from "../../../docs/prompts/review-questions.md?raw";
+import redrawCharts from "../../../docs/prompts/redraw-charts.md?raw";
 import questionFormat from "../../../docs/user/question-format.md?raw";
 
-/** The three bank-building prompts, shown under "Build a question bank from your PDFs". */
+/** The bank-building prompts (the fourth is optional), shown under "Build a question bank from your PDFs". */
 const PROMPTS = [
   { title: "Prompt 1 · PDF → Markdown", text: pdfToMarkdown },
   { title: "Prompt 2 · Extract questions", text: extractQuestions },
   { title: "Prompt 3 · Review the bank", text: reviewQuestions },
+  { title: "Prompt 4 · Redraw charts (optional)", text: redrawCharts },
 ];
 const PROMPT_SECTION = "Build a question bank from your PDFs";
 const REPOSITORY_FILES =

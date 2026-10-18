@@ -72,7 +72,7 @@ Your answers, sure/unsure marks, flags and notes come across. The app tells you 
 
 ## Build a question bank from your PDFs
 
-You do not type questions in. An AI coding agent (Claude Code, Codex or similar) does it with three prompts, below. Keep your study files in a **private** Git repository, because they are copyrighted.
+You do not type questions in. An AI coding agent (Claude Code, Codex or similar) does it with three prompts, below, plus an optional fourth that fixes charts. Keep your study files in a **private** Git repository, because they are copyrighted.
 
 ```text
 your-study-repo/
@@ -89,14 +89,15 @@ your-study-repo/
 |---|---|---|
 | 1 | PDF → Markdown | Turns each PDF into faithful Markdown notes, with formulas and tables |
 | 2 | Extract questions | Copies the multiple-choice questions word for word into bank files, one source and one topic per run |
-| 3 | Review the bank | Removes duplicate questions across sources and writes missing answer keys, marked as AI-written |
+| 3 | Review the bank | Removes duplicate questions across sources, writes missing answer keys and short explanations, marked as AI-written |
+| 4 (optional) | Redraw charts | Redraws charts left as text or blurry page crops, in the notes and the question bank |
 
 How to use a prompt:
 
 1. Open it below and click **Copy**.
 2. Paste it into a new AI-agent session and fill in its **Settings** block (your repository, exam, folders).
 3. Run step 2 once per source and topic, and step 3 once per topic. Several sessions can run at the same time.
-4. Run the steps in order. Run step 3 again after you add a new source.
+4. Run the steps in order. Run step 3 again after you add a new source. Run step 4 only if some charts still show as text or blurry page crops.
 
 ## Problems
 
