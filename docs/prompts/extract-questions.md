@@ -141,7 +141,7 @@ The assumption is that residual variances are equal across observations.
 
 # Chapter 03 Model Misspecification
 
-## Question ST-PB-1586011
+## Question ST-PB-1234567
 
 Which of the following is least likely a test for heteroskedasticity?
 
@@ -157,7 +157,7 @@ C. Breusch-Godfrey test.
 
 > Key not given in source.
 
-*Source: Practice Book, Question ID 1586011.*
+*Source: Practice Book, Question ID 1234567.*
 ```
 
 ## Workflow
