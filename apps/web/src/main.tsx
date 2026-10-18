@@ -16,6 +16,8 @@ import { api, ApiError, operation } from "./api";
 const Markdown = lazy(() =>
   import("./Markdown").then((module) => ({ default: module.Markdown })),
 );
+/** The user guide (with the three prompts) loads only when opened. */
+const Guide = lazy(() => import("./Guide"));
 import "@fontsource-variable/inter";
 import "@fontsource-variable/source-serif-4";
 import "./style.css";
@@ -27,6 +29,7 @@ const pages = [
   "Notes",
   "History",
   "Settings",
+  "Guide",
 ] as const;
 type Page = (typeof pages)[number];
 const DEFAULT_MODEL = "gpt-6.1-sol";
@@ -1655,20 +1658,20 @@ function App() {
                   position={position}
                   onPick={pickQuestion}
                 />
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setQuestion(null);
-                    setActiveSet(null);
-                  }}
-                >
-                  ← Back to Practice
-                </button>
               </div>
               <section className="panel tutor-inline">
                 <h2>Ask AI</h2>
                 {tutorConversation}
               </section>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setQuestion(null);
+                  setActiveSet(null);
+                }}
+              >
+                ← Back to Practice
+              </button>
             </>
           )}
           {library && page === "Materials" && (
@@ -2180,6 +2183,7 @@ function App() {
               )}
             </>
           )}
+          {page === "Guide" && <Guide />}
           {library && page === "Settings" && (
             <>
               <h1>Settings</h1>

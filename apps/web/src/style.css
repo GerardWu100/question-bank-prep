@@ -1036,3 +1036,20 @@ nav select {
 .display-tools {
   align-items: center;
 }
+/* Guide: each topic is a folded panel; prompts show their full text in a scroll box. */
+.guide-section > summary h2 {
+  display: inline;
+  margin: 0;
+}
+.guide-prompt > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 600;
+}
+.prompt-text {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+}
