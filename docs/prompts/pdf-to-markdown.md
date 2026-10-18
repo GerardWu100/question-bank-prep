@@ -1,13 +1,14 @@
 # Prompt 1: PDF study material → Markdown
 
-Step 1 of 3. Converts exam-prep PDFs into faithful Markdown notes that the study app's Materials page can show and that prompt 2 extracts questions from.
+Step 1 of 3. Converts exam-prep PDFs into faithful Markdown notes, which prompt 2 then extracts questions from.
 
-How to use: open an AI coding session in your study repository, fill in **Settings**, and send everything below the line.
+How to use: fill in **Settings** and give everything below the line to an AI agent. The prompt is self-contained.
 
 ---
 
 ## Settings
 
+- **REPOSITORY**: `<git URL of your study repository>`
 - **EXAM**: `<exam name and level>`
 - **PDF_FOLDER**: `materials/` (source PDFs, never edited)
 - **OUTPUT_FOLDER**: `md_materials/` (Markdown output, mirrors PDF_FOLDER)
@@ -16,14 +17,14 @@ How to use: open an AI coding session in your study repository, fill in **Settin
 
 ## Task
 
-Convert the PDFs in PDFS into faithful Markdown study notes. Convert every page, not a summary or a selection.
+First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). Then convert the PDFs in PDFS into faithful Markdown study notes. Convert every page, not a summary or a selection.
 
 ## Content and structure
 
 - Simplify the slide layout but keep the study content, its order, wording, values and units.
 - Use meaningful topic headings, such as "The Gordon Growth Model". Remove page-number prefixes, and merge repeated headings without losing content or changing its order.
 - Heading levels: one `#` for the file title, `##` for readings or chapters, `###` and deeper below them.
-- A file that covers the whole syllabus (a review book or a framework) keeps its title as the first `#`, then uses exactly one `#` per exam topic, with the topic names and order from OUTLINE; its readings are `##`. The study app opens such a file as one section per topic.
+- A file that covers the whole syllabus (a review book or a framework) keeps its title as the first `#`, then uses exactly one `#` per exam topic, with the topic names and order from OUTLINE; its readings are `##`. A reader can then open it one topic at a time.
 - Practice questions: keep each question's numbering, keep choice labels as `A.`, `B.`, `C.`, and keep each answer key on its own explicit line (for example `Answer: B`), so questions and keys can be matched later.
 - Leave out author credits, logos, decorative cover images and other non-study elements.
 - Translate all non-English study text into English.
@@ -49,7 +50,7 @@ Convert the PDFs in PDFS into faithful Markdown study notes. Convert every page,
 
 - Look at the rendered pages as well as the extracted text, so image-only content and broken formulas are not missed.
 - Confirm completeness: every page, exercise, supplied answer, equation, table, diagram and needed picture is present.
-- Check that the Markdown renders: math, tables, diagrams and image links. The study app's Materials page (`READING_ROOT` pointing at OUTPUT_FOLDER) renders exactly as the app will; red formula text there is a KaTeX error to fix.
+- Check that the Markdown renders: math, tables, diagrams and image links. Preview each file in a Markdown viewer with KaTeX math and Mermaid (for example VS Code's preview or GitHub) and fix every formula that fails to render.
 - Quick text checks on each file: `grep -nE '^\s*\$\$.+|.+\$\$\s*$' <file>` lists only one-line `$$…$$` formulas, and `grep -n '\\(' <file>` finds no `\(` math.
 - Report every unresolved uncertainty in the source instead of guessing.
 

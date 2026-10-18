@@ -2,33 +2,29 @@
 
 Step 3 of 3. Removes duplicate and near-duplicate questions across sources, and writes missing answer keys marked as AI-written.
 
-How to use: open an AI coding session in your study repository, fill in **Settings**, and send everything below the line.
+How to use: fill in **Settings** and give everything below the line to an AI agent. The prompt is self-contained.
 
 ---
 
 ## Settings
 
+- **REPOSITORY**: `<git URL of your study repository>`
 - **EXAM**: `<exam name and level>`
 - **MATERIALS**: `md_materials/` (Markdown study material; reference only, never edited)
 - **BANK**: `question_bank/`
 - **OUTLINE**: `<file listing the exam's topics, chapters and learning objectives>`
 - **TRACKING**: `docs/question-bank/` (holds `sources.md` and `review-log.md`)
-- **APP**: `<path to the question-bank-prep repository>`
 - **SCOPE**: `<BANK>/<NN-topic>/` (or the whole BANK)
 - **SOURCE_PRIORITY**: `<source codes from sources.md, highest first, for example "A > B, C > D"; or "none">`
 
 ## Task
 
-Review SCOPE: dedupe first (Part A), then write missing answers (Part B). Edit only bank files in SCOPE and `TRACKING/review-log.md`. Read MATERIALS and the original PDFs freely, but never edit them. Run every check, update the log, report the counts, then commit and push.
+First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). Then review SCOPE: dedupe first (Part A), then write missing answers (Part B). Edit only bank files in SCOPE and `TRACKING/review-log.md`. Read MATERIALS and the original PDFs freely, but never edit them. Run every check, update the log, report the counts, then commit and push.
 
-Tools, run from the study repository (write reports to a scratch folder, never inside BANK, because the app imports every `.md` file there):
+Write two small scripts in a scratch folder outside the repository (Python through `uv run python`), and keep their reports there too, never inside BANK: every `.md` file in BANK is read as a question bank.
 
-```bash
-npm --prefix <APP> run -s check-bank -- "$PWD/<BANK>"
-npm --prefix <APP> run -s find-duplicates -- "$PWD/<BANK>/<NN-topic>" --out /tmp/duplicates.md
-```
-
-`find-duplicates` compares questions across sources inside one topic folder: stems and choices, plus similar case passages.
+- **Format check.** Bank files are read by their Markdown headings (a `#` line inside a fenced code block is not a heading). Report as an *error*: a file with no `Question` heading; a question with fewer than two choices or a repeated label (a choice is a line starting `A. `, `B. ` … with labels A to E); a choice label after E. Report as *no valid key*: a question with no `Answer` or `Answer (AI)` sub-heading, or whose answer's first non-blank line is not exactly one of its choice labels. A `Case` heading's passage runs to its first `Question` heading; its questions sit one level deeper.
+- **Duplicate finder.** Compare questions only within one topic folder, never two questions of the same case. Normalize each question's stem plus choices: lower-case, strip Markdown and LaTeX markup. Classify a pair as *same text* (identical), *numbers differ* (identical once every number is replaced by `#`), or *similar* (Jaccard similarity of the two number-masked word sets at or above a threshold, where Jaccard(A, B) = shared words / all distinct words; skip "similar" when either set has fewer than 8 words). When either question belongs to a case, also require the two case passages to pass the same threshold, because one stem over different exhibit data is a different question. Join matches into groups (A~B and B~C give one group) and list each group with file, line, and whether each copy has a key and a solution.
 
 ## The review log
 
@@ -45,7 +41,7 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
 
 ## Part A: dedupe
 
-1. **Find candidates.** Run `find-duplicates` on each topic folder in SCOPE (default threshold 0.9; also try `--threshold 0.85` once to catch renamed case sets).
+1. **Find candidates.** Run the duplicate finder on each topic folder in SCOPE with threshold 0.9, then once with 0.85 to catch renamed case sets.
 2. **Judge each group by reading the questions.** A group is a duplicate when it asks the same thing about the same kind of data:
    - same text: duplicate;
    - the same question with different numbers, names or small wording changes: duplicate (keep one copy of each variant family);
@@ -59,10 +55,10 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
 
 ## Part B: write missing answers
 
-1. **Find questions without a key**: the `check-bank` warnings `missing or ambiguous answer key`. If there are none, Part B is done; do not audit source keys unless asked.
+1. **Find questions without a key**: the format check's *no valid key* list. If there are none, Part B is done; do not audit source keys unless asked.
 2. **Solve each one yourself.** Read the stem, case passage, exhibits and choices. Look up the concept and formula in MATERIALS (search the topic's notes, lectures and formula sheets) and in OUTLINE. Compute every calculation with `uv run python`, not by mental arithmetic.
 3. **Check before you commit to a key.** Work the answer a second, independent way (another formula, a sanity bound, or ruling out the other choices). If the two ways disagree, or you are not sure, **do not write a key**; log the question as unresolved.
-4. **Write the key in the AI format.** The `(AI)` in the heading is the only marker: the app stores it but does not show it while practising (hover the Answer line to see it), so do not write "AI-written" anywhere in the visible text.
+4. **Write the key in the AI format.** The `(AI)` in the heading is the only marker, so do not write "AI-written" anywhere else in the text.
 
    ```markdown
    #### Answer (AI)
@@ -85,7 +81,7 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
 
 ## Finish
 
-1. `check-bank` shows 0 errors, and every remaining `missing or ambiguous answer key` warning is logged as unresolved.
+1. The format check shows 0 errors, and every question left on its *no valid key* list is logged as unresolved.
 2. `grep -rn "Answer (AI)" <BANK> | wc -l` equals the number of AI keys in the log.
 3. Update the Counts table in the log.
 4. Commit and push the study repository. Never copy question text into a public repository.

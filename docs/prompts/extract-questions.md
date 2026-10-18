@@ -1,24 +1,24 @@
 # Prompt 2: Markdown study material → question bank
 
-Step 2 of 3. Copies multiple-choice questions from the Markdown study material into bank files that the study app imports: one folder per topic, one file per source.
+Step 2 of 3. Copies multiple-choice questions from the Markdown study material into question-bank files in a fixed Markdown format: one folder per topic, one file per source.
 
-How to use: open an AI coding session in your study repository, fill in **Settings**, and send everything below the line. Run one job (one source × one topic) per session.
+How to use: fill in **Settings** and give everything below the line to an AI agent. The prompt is self-contained. Run one job (one source × one topic) per agent.
 
 ---
 
 ## Settings
 
+- **REPOSITORY**: `<git URL of your study repository>`
 - **EXAM**: `<exam name and level>`
 - **MATERIALS**: `md_materials/` (Markdown study material from prompt 1; read only)
 - **BANK**: `question_bank/` (output)
 - **OUTLINE**: `<file listing the exam's topics and chapters, with chapter codes and learning objectives>`
 - **TRACKING**: `docs/question-bank/` (holds `sources.md` and `review-log.md`)
-- **APP**: `<path to the question-bank-prep repository>`
 - **JOB**: extract `<source name>`, topic `<NN Topic>`, into `<BANK>/<NN-topic>/<source-file>.md`
 
 ## Task
 
-Do JOB. Copy the questions word for word into the layout below, run every check, update the tracking files, report the counts and anything these rules did not cover, then commit and push.
+First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). Then do JOB. Copy the questions word for word into the layout below, run every check, update the tracking files, report the counts and anything these rules did not cover, then commit and push.
 
 ## Tracking files
 
@@ -40,10 +40,10 @@ BANK/
 └── 02-<topic-slug>/
 ```
 
-- Only bank files go in BANK. The app imports every `.md` file there as questions, so put no README or notes inside. Keep each folder's `.gitkeep`.
+- Only bank files go in BANK. Every `.md` file there is read as a question bank, so put no README or notes inside. Keep each folder's `.gitkeep`.
 - One file per source per topic keeps files small enough to check and lets you re-extract one source without touching others.
 
-## Headings (depth matters: the app's parser reads them)
+## Headings (depth matters: a parser reads them)
 
 | Depth | Heading | Use |
 |---|---|---|
@@ -71,6 +71,19 @@ BANK/
 - **Only multiple choice with two or more options.** Skip open-ended examples, calculations without choices and true/false checklists; count them as skipped.
 - **Images**: copy the image to `BANK/<NN-topic>/assets/` and change the link to `assets/<file>`.
 - **Duplicates**: inside one source, keep one copy (some banks repeat every quiz). Across sources, keep all copies; prompt 3 removes them.
+
+## Format rules
+
+A parser reads the bank files by their Markdown headings. Only real headings count: a `#` line inside a fenced code block is not a heading.
+
+- **Errors** (the file cannot be used until fixed):
+  - The file has no `Question` heading.
+  - A `Question` heading (text starting with `Question `) has fewer than two choices, or two choices with the same label. A choice is a line starting with its label and a period: `A. `, `B. `, `C. ` (labels A to E).
+  - A choice uses a label after E, such as `F. `.
+- **No valid key** (allowed only when the source has no key): there is no `Answer` or `Answer (AI)` sub-heading, or its first non-blank line is not exactly one of that question's choice labels.
+- A question's `Choices`, `Answer` and `Solution` sub-headings are one level deeper than its `Question` heading and use exactly those words.
+- A `Case` heading starts a passage that runs to its first `Question` heading, so exhibits under deeper headings stay in it. Its questions are one level deeper than the case. The case ends at the next heading of the same or a shallower level.
+- A `Chapter` heading (text starting with `Chapter`) sets the chapter for every question below it and ends any open case.
 
 ## Choosing the chapter
 
@@ -150,23 +163,15 @@ C. Breusch-Godfrey test.
 1. **Check the job.** Read `sources.md` so you do not redo finished work.
 2. **Map the source.** List its headings (`grep -n '^#' <file>`) and find where questions and keys are. Count the multiple-choice questions you expect, with the count method in `sources.md` when one is given, and write the number down.
 3. **Extract.** For a source with regular structure, write a small transform script in a scratch folder outside the repository (Python through `uv run python`) instead of retyping, so nothing can be misquoted. Otherwise work one case, quiz or chapter at a time and append to the output file. For a source over about 1,500 lines, use one subagent per topic, each writing only its own output file.
-4. **Check the format** with the app's parser, and fix every `ERROR`:
-
-   ```bash
-   npm --prefix <APP> run -s check-bank -- "$PWD/<BANK>/<NN-topic>/<source-file>.md"
-   ```
-
-   Each `missing or ambiguous answer key` warning must match a question that truly has no key in the source.
+4. **Check the format** with a small script you write in the scratch folder, against the **Format rules** below. Fix every error. Each question the script reports without a valid key must be one that truly has no key in the source.
 5. **Check the content.**
    - Extracted + skipped = the count from step 2. Explain any gap.
    - Compare every key with the source key, question by question, and check that every non-blank source line of each question appears in the output (a script does both cheaply). Then read at least five random questions, plus every question with a table, chart or image, against the source.
    - `grep -rn '\[Correct\]\|\[Incorrect\]' <BANK>` returns nothing.
-   - Open the topic on the app's Practice page and look at a few questions with formulas, tables or charts: no red formula text and no raw `$$`.
+   - Preview a few questions with formulas, tables or charts in a Markdown viewer with KaTeX math: every formula renders, and no raw `$` shows.
 6. **Record.** Update the source's Status in `sources.md` (`in progress (<topics done>)`, or `done` when every topic it covers is finished) and add a row to the Extraction log.
 7. **Commit and push** the study repository. Keep it private when it holds copyrighted material, and never copy question text into a public repository.
 
 ## Report
 
 End with: source count, extracted, keyed, skipped (with reasons), what you spot-checked, and any case these rules did not cover.
-
-The app needs no manual import: it syncs BANK each time it opens (`MATERIAL_ROOT` in its `.env`, or the `/question_bank` mount of its Docker image), reads subfolders, and keeps answer history when a file is re-extracted.
