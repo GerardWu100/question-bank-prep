@@ -1,10 +1,10 @@
 # Question Bank Prep
 
-**A self-hosted practice app for the CFA® exam and other multiple-choice exams, with an AI tutor built in.** Keep your question banks as plain Markdown, practise them by topic and chapter, see exactly where you lose marks, and get hints, explanations and a study review from an AI tutor that reads and cites your own notes. Three [ready prompts](#build-a-bank-from-your-pdfs-three-prompts) let an AI agent turn your study PDFs into notes and a clean question bank. New here? Start with the [user guide](docs/user/user-guide.md), or download the [desktop app](https://github.com/GerardWu100/question-bank-prep/releases/latest) for Linux, macOS or Windows.
+**A practice app for the CFA® exam and other multiple-choice exams, with an AI tutor built in.** Keep your question banks as plain Markdown, practise them by topic and chapter, see where you lose marks, and get hints and explanations from an AI tutor that cites your own notes. Use the desktop app (Linux, macOS, Windows) or host it yourself with Docker.
 
 [![Tests](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml/badge.svg)](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml)
+[![Desktop app](https://img.shields.io/github/v/release/GerardWu100/question-bank-prep?label=desktop%20app)](https://github.com/GerardWu100/question-bank-prep/releases/latest)
 [![Docker image](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/GerardWu100/question-bank-prep/pkgs/container/question-bank-prep)
-![Platforms](https://img.shields.io/badge/platforms-amd64%20%7C%20arm64-555)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 <picture>
@@ -14,17 +14,14 @@
 
 ## Why
 
-Commercial question banks lock your answers inside their site, and generic flashcard apps do not understand item sets, exhibits or formulas. This app keeps the questions in files you own and the study record on your own machine:
+Commercial question banks lock your answers inside their site, and flashcard apps do not understand item sets, exhibits or formulas. This app keeps the questions in files you own and the study record on your machine.
 
-- **Practice by topic and chapter.** Every chapter shows a progress bar (green correct, amber unsure, red wrong), accuracy, and one-click **Mistakes**, **Unsure** and **★ Flagged** sets. **Resume last session** returns to the exact question you left.
-- **Real exam formats.** Standalone questions and CFA-style item sets: a case passage with exhibits and tables, followed by its questions. Formulas render with KaTeX; diagrams with Mermaid.
-- **Confidence, not just right or wrong.** Mark an answer *unsure*, and a lucky guess goes to the Unsure set instead of hiding among correct answers.
-- **Your bank stays plain Markdown.** Point the app at a folder; it syncs every time you open it and keeps your answer history when a file is edited or re-extracted.
-- **Read your notes beside the questions.** The Materials page shows your study notes (Markdown, math, images), one section at a time.
-- **An AI tutor beside every question and note section.** See [AI features](#ai-features) below.
-- **Three ready prompts build the bank for you.** Give them to an AI coding agent to turn study PDFs into notes and a clean question bank. See [Build a bank from your PDFs](#build-a-bank-from-your-pdfs-three-prompts).
-- **Self-hosted and private.** A desktop app for Linux, macOS and Windows, or one Docker image for PCs, servers and Raspberry Pi; one SQLite file holds every answer, note and chat. Practice works without the AI.
-- **Take your progress with you.** **Settings → Export → Study progress** saves answers, confidence, flags and notes as one JSON file; **Import study progress** loads it into another install (server to desktop, or a new machine).
+- **Practice by topic and chapter**, with a progress bar per chapter and one-click **Mistakes**, **Unsure** and **★ Flagged** reviews.
+- **Real exam formats**: standalone questions and CFA-style item sets with exhibits, tables and formulas.
+- **Sure or unsure**: a lucky guess goes to the Unsure set instead of hiding among correct answers.
+- **Your notes beside the questions** on the Materials page.
+- **An AI tutor** under every question and note section (below).
+- **Your data stays yours**: plain Markdown banks, one SQLite file for progress, and an export that moves your progress to another device.
 
 <p>
 <picture>
@@ -37,43 +34,53 @@ Commercial question banks lock your answers inside their site, and generic flash
 </picture>
 </p>
 
-## AI features
-
-The tutor sits under each practice question, beside each section of your notes, and on its own **Ask AI** page.
+## AI tutor
 
 | Feature | What it does |
 |---|---|
-| **Hint** | Before you answer: one hint at a time, and the tutor cannot see or reveal the key or solution |
-| **Explain** | After you answer: the concept tested, why the key is right, why each other choice is wrong, starting with the one you picked |
-| **Explain this section** | On the Materials page: the section in plain language, every symbol in each formula, and a worked example with numbers |
-| **Review my study** | Reads your results by chapter, your mistakes, the questions you asked and your notes; names your weak concepts and the next three chapters to practise |
-| **Cites your notes** | Searches your study notes (ripgrep, file list, line reader; read only) and ends each answer with the file and section it used |
-| **Calculator** | Works numbers out in a bounded Python calculator instead of mental arithmetic |
-| **Saved conversations** | Each question and note section keeps its own chat; **History** lists them all, and any reply can be saved as an AI note |
-| **AI answer keys** | Prompt 3 fills keys a source left out, marked `Answer (AI)` in the file, and never overwrites a source key |
+| **Hint** | Before you answer: one hint at a time; the tutor cannot see the key |
+| **Explain** | After you answer: why the key is right and why your choice was wrong |
+| **Explain this section** | On Materials: the section in plain words, with a worked example |
+| **Review my study** | Finds your weak concepts and names the next three chapters to practise |
+| **Cites your notes** | Searches your notes and names the file and section it used |
 
-It runs on the ChatGPT subscription you already have (the app reads the existing Codex login, so there is no per-token bill), or on your own API key for OpenRouter, OpenAI or any OpenAI-compatible endpoint, including free OpenRouter models and a local Ollama. Choose in **Settings → AI provider**; pick the model, and its thinking level for Codex models, in Settings. Only the current question or note section, the recent messages of that chat, and what the tutor looks up are sent. Practice works fully without AI.
+It runs on your ChatGPT subscription (through the Codex login) or on your own API key: OpenRouter (including free models), OpenAI, or any OpenAI-compatible service. Choose in **Settings → AI provider**. Practice works fully without AI.
 
-## Build a bank from your PDFs: three prompts
+## Get started
 
-You do not type questions in. Open an AI coding agent (such as Claude Code or Codex) in your own study folder, fill in the short **Settings** block at the top of each prompt (exam name, folders, the file that lists your topics and chapters), and send it. The prompts work for any exam; nothing in them is CFA-specific.
+**Desktop app.** Download the installer from the [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest): `.AppImage` or `.deb` (Linux), `.dmg` (macOS), `.exe` (Windows). Open it, click **Create library**, then pick your folders in **File → Question-bank folder…** and **File → Study-notes folder…**. No password is needed. Already run a server? **File → Connect to a server…** uses its questions and progress instead. The installers are not signed: on macOS right-click → **Open**; on Windows **More info → Run anyway**.
+
+**Server with Docker** (reach it from any device, with a password). Save this as `docker-compose.yml`, put `STUDY_PASSWORD=<a password>` in a `.env` file beside it, and run `docker compose up -d`:
+
+```yaml
+services:
+  question-bank-prep:
+    image: ghcr.io/gerardwu100/question-bank-prep:latest
+    restart: unless-stopped
+    user: "1000:1000"                 # your `id -u`:`id -g`
+    ports:
+      - "6848:3000"                   # open http://<server>:6848
+    environment:
+      - STUDY_PASSWORD=${STUDY_PASSWORD}
+    volumes:
+      - ~/.containers/question-bank-prep:/data            # progress and settings
+      - ~/projects/cfa/question_bank:/question_bank:ro    # question banks
+      - ~/projects/cfa/md_materials:/materials:ro         # study notes
+```
+
+To use the ChatGPT subscription inside Docker, see the [commented compose file](docker-compose.example.yml). Update with `docker compose pull && docker compose up -d`; your progress lives in `/data` and is kept.
+
+The [user guide](docs/user/user-guide.md) walks through both, and the app's **Guide** tab explains every page.
+
+## Build a bank from your PDFs
+
+You do not type questions in. Give these three prompts to an AI coding agent (Claude Code, Codex or similar) in your own study folder; they work for any exam.
 
 | Step | Prompt | What you get |
 |---|---|---|
-| 1 | [PDF → Markdown](docs/prompts/pdf-to-markdown.md) | Faithful Markdown notes with formulas, tables and diagrams, shown on the Materials page |
-| 2 | [Extract questions](docs/prompts/extract-questions.md) | Multiple-choice questions copied word for word into `question_bank/<NN-topic>/<source>.md`, checked with `npm run check-bank` |
-| 3 | [Review the bank](docs/prompts/review-questions.md) | Duplicates and near-duplicates removed (`npm run find-duplicates`), and missing keys filled under an `Answer (AI)` heading that never replaces a source key |
-
-Keep your study folder private when it holds copyrighted material; this repository holds only the prompts.
-
-```mermaid
-flowchart LR
-  A[Study PDFs] -->|prompt 1| B[Markdown notes]
-  B -->|prompt 2| C[Question bank<br/>one file per source and topic]
-  C -->|prompt 3| D[Deduplicated bank<br/>missing keys filled]
-  B --> E[Materials page]
-  D --> F[Practice page]
-```
+| 1 | [PDF → Markdown](docs/prompts/pdf-to-markdown.md) | Faithful Markdown notes, shown on the Materials page |
+| 2 | [Extract questions](docs/prompts/extract-questions.md) | Questions copied word for word into `question_bank/<topic>/<source>.md` |
+| 3 | [Review the bank](docs/prompts/review-questions.md) | Duplicates removed and missing answer keys added, marked as AI-written |
 
 A question is ordinary Markdown ([format guide](docs/user/question-format.md)):
 
@@ -93,181 +100,14 @@ A
 $PV = 500 / 1.05^2 = 453.51$.
 ```
 
-## Desktop app
+Keep your study folder private when it holds copyrighted material; this repository holds only the app and the prompts.
 
-Download the installer for your system from the [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest): `.AppImage` or `.deb` (Linux), `.dmg` (macOS), `.exe` (Windows); x64 and arm64. The desktop app runs the same app in its own window, on this computer only, with **no password**. Choose your folders in **File → Question-bank folder…** and **File → Study-notes folder…** (the app restarts to read them). Data lives in the app's user-data folder (**File → Open data folder**). For AI, use **Settings → AI provider**: the Codex login is read from `~/.codex` as usual, or save an API key.
+## More
 
-**Use your server from the desktop app.** **File → Connect to a server…** takes the address of your hosted server (for example the Docker setup below, `https://study.example.com` or `http://192.168.1.20:6848`). The window then shows that server: its question banks, notes, AI settings and your study progress all stay on the server, and you sign in with its password. **File → Use this computer (local data)** switches back. If the server cannot be reached at start, the app offers Retry, Change server or Use this computer.
-
-The installers are not code-signed. On macOS, the first time, right-click the app and choose **Open** (or run `xattr -cr "/Applications/Question Bank Prep.app"`). On Windows, choose **More info → Run anyway** in SmartScreen. A Linux AppImage needs `chmod +x` before it runs.
-
-Build it yourself: `npm ci && npm run build && npm run build:desktop`, then in `apps/desktop` run `npm ci` and `npm run dist` (installers for the current system land in `apps/desktop/release`). `npm start` there runs it without packaging. Pushing a `v*.*.*` tag builds every platform in GitHub Actions and attaches the installers to a release.
-
-## Run with Docker
-
-You need a computer that stays on, with [Docker](https://docs.docker.com/engine/install/). No clone and no build: the image is published for ordinary PCs and servers (amd64) and Raspberry Pi or ARM servers (arm64).
-
-### Option A: Docker Compose (recommended)
-
-Save this as `docker-compose.yml` in an empty folder, and put `STUDY_PASSWORD=<a password>` in a file named `.env` beside it:
-
-```yaml
-services:
-  question-bank-prep:
-    image: ghcr.io/gerardwu100/question-bank-prep:latest
-    container_name: question-bank-prep
-    restart: unless-stopped
-    user: "1000:1000"                 # your `id -u`:`id -g`
-    ports:
-      - "6848:3000"                   # web page at http://<server>:6848
-    environment:
-      - TZ=America/Toronto
-      - STUDY_PASSWORD=${STUDY_PASSWORD}
-      - AI_MAX_REQUESTS_PER_HOUR=60   # cap on Codex use by the whole app
-      - AI_MAX_REQUESTS_PER_DAY=300
-    volumes:
-      - ~/.containers/question-bank-prep:/data              # database and backups
-      - ~/projects/cfa/question_bank:/question_bank:ro      # question banks
-      - ~/projects/cfa/md_materials:/materials:ro           # study notes
-      # Codex login, for the tutor: the login file and model list only, not all of ~/.codex
-      - type: bind
-        source: ${HOME}/.codex/auth.json
-        target: /codex/auth.json
-        read_only: true
-        bind: { create_host_path: false }
-      - type: bind
-        source: ${HOME}/.codex/models_cache.json
-        target: /codex/models_cache.json
-        read_only: true
-        bind: { create_host_path: false }
-```
-
-Then start it from that folder:
-
-```bash
-docker compose up -d
-```
-
-A [fully commented version](docker-compose.example.yml) of this file is in the repository too. It also joins a Docker network named `single`, where a reverse proxy can reach it. [`docker-compose.yml`](docker-compose.yml) builds the same service from a checkout.
-
-### Option B: one `docker run` command
-
-```bash
-docker run -d --name question-bank-prep --restart unless-stopped \
-  --user 1000:1000 -p 6848:3000 \
-  -e TZ=America/Toronto -e STUDY_PASSWORD=change-me \
-  -v ~/.containers/question-bank-prep:/data \
-  -v ~/projects/cfa/question_bank:/question_bank:ro \
-  -v ~/projects/cfa/md_materials:/materials:ro \
-  --mount type=bind,src=$HOME/.codex/auth.json,dst=/codex/auth.json,readonly \
-  --mount type=bind,src=$HOME/.codex/models_cache.json,dst=/codex/models_cache.json,readonly \
-  ghcr.io/gerardwu100/question-bank-prep:latest
-```
-
-### Before you start: what to check
-
-| Check | Why | What to change |
-|---|---|---|
-| The left side of each volume line | Those are the folders on your computer | Your `question_bank`, `md_materials` and Codex files; leave out the notes or both Codex entries to run without that feature |
-| Codex login files exist | Only `~/.codex/auth.json` and `~/.codex/models_cache.json` go into the container, never the rest of `~/.codex`; the container refuses to start if either is missing | Sign in to Codex with ChatGPT and open it once; after `codex logout` and a new login, restart the container |
-| `AI_MAX_REQUESTS_PER_HOUR`, `AI_MAX_REQUESTS_PER_DAY` | Caps how many Codex requests the whole app sends (default 60 an hour, 300 a day), so a leaked password cannot drain your ChatGPT plan | Raise them if the tutor stops you during normal study; `0` turns a cap off |
-| Run `id -u` and `id -g` | The database should belong to you, and the Codex login is readable only by you | If either is not `1000`, change `user:` |
-| `STUDY_PASSWORD` | The container listens beyond the server itself, so the app refuses to start without a password (Compose also refuses to start without it) | Set it in `.env` |
-| `TRUST_PROXY` | Behind a reverse proxy that serves HTTPS, the login cookie should be marked Secure | Set `TRUST_PROXY=true` only in that case; leave `false` when the app is reached directly |
-
-Then open **`http://<server address>:6848`** and sign in. The question folder syncs every time the app opens; the database lives in `/data`.
-
-### Update
-
-| Installed with | Update with |
-|---|---|
-| Compose | `docker compose pull && docker compose up -d` |
-| `docker run` | `docker pull ghcr.io/gerardwu100/question-bank-prep:latest`, then `docker rm -f question-bank-prep`, then the same `docker run` command again |
-
-Your progress, chats and notes live in `/data`, not in the container, so updating never loses them. **Pin a version** by replacing `latest` with `1`, `1.0` or `1.0.0` once releases are tagged (`git tag v1.0.0 && git push --tags` publishes them).
-
-## Run without Docker
-
-Requires Node.js 24 or newer and npm. Native SQLite installation requires a working C++ toolchain when no matching binary is available.
-
-```sh
-npm ci
-npm run build
-npm start
-```
-
-Open `http://127.0.0.1:3000`. The default binds only to this computer. Copy `.env.example` to `.env` to set a password, storage directory, port or existing material folder. The app refuses a non-loopback listener without a password. Use HTTPS through a trusted reverse proxy for remote hosting.
-
-For interface development, run `npm run dev` and `npm run dev:web` in separate terminals, then open `http://127.0.0.1:5173`.
-
-## Prepare a bank
-
-Set `MATERIAL_ROOT` in `.env` to a folder of bank files: the app syncs it every time a library opens (Settings → Sync folder now forces it), and the manual import panel is hidden. Without a folder, import on the Materials page: **Choose a folder** picks a whole bank folder (every `.md` file in it and its subfolders; `README.md` and `.git` are skipped; the first subfolder becomes the topic and the file name the source, as with `MATERIAL_ROOT`), or **Choose a file** picks one bank file. Preview, then confirm. **The full format guide is [docs/user/question-format.md](docs/user/question-format.md)**, with working examples in [examples/](examples). In short:
-
-```markdown
-# Chapter 1
-
-## Question 1
-What is two plus two?
-
-### Choices
-A. Three
-B. Four
-C. Five
-
-### Answer
-B
-
-### Solution
-Two pairs make four.
-```
-
-Choices are the letters A to Z in order, so a question can have more than five. Put `Question` headings one level below a `Case` heading to share its passage. Keep choice, answer and solution headings one level deeper than the question. Preview reports missing keys and structural errors before committing; `npm run check-bank -- <file-or-folder>` runs the same checks from the command line. Missing keys remain readable but cannot be graded. Choices never shuffle. Review sets retain their membership and order after answers change.
-
-The Practice page has one toggle per source (switch a source off to practise only the others; remembered per browser) and lists every topic as a foldable panel (all open until you fold one), with an "All chapters" line and one line per chapter (sources are merged; each chapter names its sources in small text), each with a progress bar (green correct, amber unsure, red wrong), answered/total and accuracy. **Start / Continue / Review** reopens that chapter's set where you left off (the first unanswered question); **Mistakes** and **Unsure** (shown when there are any) build sets of your wrong and unsure-but-correct questions; **★ Flagged**, **✗ Mistakes** and **? Unsure** at the top practise all starred, wrong or unsure questions from every source, even sources switched off. Unsure answers count as correct in the accuracy figure. On a question, **← Previous**, the position (6 / 26) and **Next →** stay pinned at the top while you scroll; Sure/Unsure, **Submit answer** and the save status share one line under the choices; the set title, progress bar, number strip and **← Back to Practice** sit below the question. After a wrong answer, a small **Misclicked** button beside Next re-saves the key so a slip does not land in Mistakes. **Settings → Practice → Show the answer as soon as I pick a choice** removes the Submit step (remembered per browser): pick Sure or Unsure first, then click a choice. Answers are remembered across sets: a question you answered anywhere shows your latest answer and its solution. A folded **Custom practice set** builder filters by **Topic** (the bank's folder, such as `01-quantitative-methods`), **Source** (the file name) and **Chapter**; each option shows answered/total. The number strip colours finished questions by result (green correct, amber unsure, red wrong). The URL keeps the current page and open set, so refresh stays in place and the browser Back button returns to the previous view. Free-form notes live on the **Notes** page (Markdown, editable), with separate **My notes** and **AI notes** (saved tutor replies) tabs; any note can be deleted after a confirmation. **Settings → Export** downloads my notes and AI notes (Markdown, to read) and study progress (JSON: every answer with its confidence and order, flags, question notes and all notes). **Settings → Import study progress** loads that JSON into the open library: a question is found again by topic, source and question ID (then by its stem and choices, when the file moved), so import the same bank first; imported answers replace local ones for those questions, notes already present are not copied twice, and questions the library lacks are listed. Chats and saved sets are not included. There is no per-question note box.
-
-Set `READING_ROOT` in `.env` to a folder of Markdown study material (for example `cfa/md_materials`) to read it on the **Materials** page: files grouped by folder, long files split into sections with Previous/Next (a whole-curriculum file whose top headings are the CFA topics opens as one section per topic), images and Mermaid diagrams shown, last place remembered, and an **Ask AI about this section** box under each section that sends that section to the tutor as context (the conversation is saved per section). It is read-only; the upload import appears there only when no `MATERIAL_ROOT` is set. The tabs are Practice, Materials, Ask AI, Notes, History, Settings and **Guide** (a user guide inside the app: how each page and the AI tutor work, moving progress, troubleshooting, the question format, and the three bank-building prompts with Copy buttons), with no title bar above them. **Settings → Display** has **A− / A+** (text size) and a theme switch (Auto, Light, Dark), remembered per browser; both themes keep body text at high contrast and use bundled fonts, so the app looks the same on every device. Sources are read-only in the app; there is no editor and no Progress page. The app tracks two distinct answers: the latest overall answer, and the answer within each set. A set without its own answer for a question shows the latest overall answer; answering again in a set updates both. Sure/Unsure applies only to correct answers. A saved response means done, not mastery.
-
-**Resume last session**, at the top of Practice, reopens the last set used in this browser for the selected library at its exact saved question, even if that question is answered. It does not create a new set. The button is disabled until a valid session exists; the selected library is remembered after reload. Chapter **Start / Continue** keeps its existing first-unanswered behavior. Four compact result counters sit at the bottom of the Practice page, and topic/chapter controls and collapsed note cards use little vertical space.
-
-## AI and calculator
-
-**Settings → AI provider** chooses where tutor requests go, for the whole app. **ChatGPT subscription (Codex login)** (the default) uses the existing Codex login read-only through the pinned pi-ai adapter; it does not refresh or copy credentials, and Codex remains the credential refresh owner. **API key** sends requests to any OpenAI-compatible Chat Completions endpoint (base URL presets: OpenRouter, OpenAI, DeepSeek, Groq, Google Gemini, a local Ollama) with your key, to the model IDs you list one per line; **Browse the endpoint's models** lists what the endpoint offers (OpenRouter marks free ones; filter for `free`). On OpenRouter, `openrouter/free` routes to whichever free model is up; a model marked "no tools" cannot search your notes or use the calculator. The key is saved in `ai-settings.json` in the data folder (owner-only file permissions), never in the database or backups, and never sent back to the browser. Switching never falls back silently: a request fails with the provider's error instead. In Docker only the login file and model list are mounted, not the whole `~/.codex` folder. Every model request (one per reply plus one per tool round) counts toward a project-wide cap, `AI_MAX_REQUESTS_PER_HOUR` (default 60) and `AI_MAX_REQUESTS_PER_DAY` (default 300), kept in `ai-usage.json` in the data folder so a restart does not reset it; past the cap the tutor says when it can answer again. The app checks the local account model catalog and disables unavailable models; reopen Codex if its catalog or login has expired. Only explicitly sent context and retrieved excerpts go to the provider. Every model Codex lists for your account is offered (or your API model list); pick the tutor model and, for Codex models, its **Thinking** level once on **Settings → AI model** (stored with the library; defaults `gpt-6.1-sol` and the model's Codex default level, or the first API model). The chat box has no model picker: Enter sends, Shift+Enter adds a line. **Review my study** (Ask AI page) has the tutor read your per-chapter results and mistakes, the questions you asked it, and your notes, then name your weak concepts and the next 3 chapters to practise. **Hint** (before you answer) and **Explain** (after you answer, and under each material section) send a ready-made request. With `READING_ROOT` set, the tutor can search your study notes (a read-only `rg`, or a built-in `search_study_notes` where ripgrep is not installed, plus `list_files` like ls/find and `read_file` by line offset, all locked to that folder; no general shell) to cite the exact file and section; these tools are off in hint mode because the notes include solved question banks. When the model returns a reasoning summary, the reply shows a folded **Reasoning** line above it. The tutor writes math with `$`/`$$` (`\[ \]` and `\( \)` are converted too) and ends with a `Source:` line naming the notes or library sources it used (left out under a practice question when it used only that question). After you answer, the tutor also sees your choice and whether it was right, so Explain addresses your mistake. Ask AI sits directly below each practice question; the conversation is saved per question (your messages and the tutor's replies, with model and sources) and reopens when you return to that question, and History lists every conversation. Before you answer, hint-mode messages are shown only in the set where they were written.
-
-The calculator uses a disposable Pyodide worker with time and output limits. It needs no Docker. This is practical local containment, **not an operating-system sandbox** or a hard host memory limit. Do not expose it to untrusted public users.
-
-## Back up and restore
-
-```sh
-npm run backup -- backup app-data/study.sqlite app-data/backups/study.sqlite
-npm run backup -- restore app-data/backups/study.sqlite app-data/restored/study.sqlite
-```
-
-The snapshot contains imported source versions and all database records; it does not copy credentials or unrelated external-folder files. Keep its adjacent checksum manifest. Restore accepts only a new destination, verifies the checksum and SQLite integrity, and never overwrites a live database. Stop the app before switching `STUDY_DATA_DIR` to the restored directory (name the restored file `study.sqlite`). Logins are stored in the database (as hashes), so they survive restarts; restoring a backup restores its logins too.
-
-Local-folder editor saves retain journals under the data directory until reimport succeeds. Settings shows pending recovery. If an external editor changes the file, resolve the conflict before retrying; the app does not silently discard that edit.
-
-## Verify
-
-The test image runs the type check, unit tests, production build and Chromium browser tests on Node 24 (Linux):
-
-```sh
-docker build --target test -t question-bank-prep-test .
-docker run --rm question-bank-prep-test
-```
-
-Or natively:
-
-```sh
-npm run typecheck
-npm test
-npm run build
-npx playwright install chromium
-npm run test:e2e
-```
-
-Tests use synthetic material and the files in `examples/`, not a proprietary bank. Browser tests use the production build on port 3100, a fresh temporary database, and bundled reading fixtures; they refuse to reuse a running server. Run the build first. The default `npm run test:e2e` runs each spec file with a fresh server so cumulative test traffic does not exhaust the production request limit. To run one focused selection, use `npm run test:e2e -- tests/e2e/resume.spec.ts`; explicit arguments are passed to one Playwright invocation. See [GUIDE_ROOT.md](GUIDE_ROOT.md) for architecture, known limits and acceptance evidence.
+- [User guide](docs/user/user-guide.md): install, daily use, AI setup, problems.
+- [App reference](docs/reference/app-behavior.md): detailed behavior, Docker settings, running from source, backup, tests.
+- [GUIDE_ROOT.md](GUIDE_ROOT.md): architecture and known limits, for developers.
 
 ## License and trademarks
 
-[MIT](LICENSE): free to use, change and share, including commercially, as long as the copyright notice stays with the code. The license covers this repository's code and documents, not the question banks or study material you load into the app. CFA® and Chartered Financial Analyst® are trademarks owned by CFA Institute. This project is not affiliated with or endorsed by CFA Institute, and it ships no exam questions: the screenshots use an original demo bank.
+[MIT](LICENSE). The license covers this repository's code and documents, not the question banks or study material you load. CFA® and Chartered Financial Analyst® are trademarks of CFA Institute. This project is not affiliated with or endorsed by CFA Institute and ships no exam questions; the screenshots use an original demo bank.
