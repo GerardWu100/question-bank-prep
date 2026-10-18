@@ -30,6 +30,8 @@ Re-import identity: an incoming question continues an old one automatically when
 
 ## Source ownership
 
+Import reuse checks the material type as well as path and content hash: changing an unchanged file from questions to a note must still update questions and search entries. Hash-based rename detection requires a unique matching file on both sides; multiple identical incoming copies receive distinct file identities.
+
 Uploaded Markdown and immutable revisions live in SQLite. Configured-folder imports read existing `.md` files in place. `material-files.ts` rejects traversal/symlinks and checks file hashes. `material-routes.ts` rechecks preview bytes, marks removed sources inactive, and exposes journal recovery. `POST /imports/root-sync` (called by the client whenever a library opens) previews and commits the folder in one step, skips the commit when every active local file hash is unchanged, accepts warnings, and turns unmatched identities into new questions; structural errors leave the library unchanged and come back as issues. Local source editing is a human route, never an AI tool. Filesystem writes and SQLite commits cannot share one atomic transaction; the durable journal handles that gap. External processes can still race the final rename.
 
 AI notes are distinct records with persistent origin labels and revisions. Original material is not rewritten by AI. Backups capture the imported bytes and database records, not unimported external-file edits or credentials.
@@ -40,19 +42,21 @@ The adapter reads existing Codex ChatGPT credentials and its account model catal
 
 The practice page and the Ask AI page render the same conversation block (`tutorConversation` in `main.tsx`); under a question it loads that question's saved chat and sends with the active set's ID, which `visibleChat` uses to filter hint-mode messages. The runtime offers every non-hidden model in Codex's account catalog (enabled when the pinned adapter supports it); the chosen model is `library.settings.model` (default `gpt-6.1-sol`), and the client sends it with each message. Set filters accept `sources: string[]` for the Practice source toggles. The client polls `GET /runs/:id` while a reply streams; there is no server-sent-events route. Durable chat runs retain partial text, terminal status, model, source handles and tool summaries. Restart marks unfinished runs interrupted. The hint tool surface omits keys/solutions, previous solved chats and overall responses. Full tutoring can use library-scoped retrieval and bounded calculator calls. AI writes require separate explicit user actions. Source handles resolve retained revisions; their existence does not prove that a model's claim is correct.
 
+Reading chats opened from History first reopen their file and saved section on Materials, so the next reply carries that section's text. Root-level reading files appear under General. Restored section indices are validated and clamped after splitting the current file, then the repaired bookmark is saved. Practice arrow-key shortcuts run only while the Practice view is visible.
+
 The calculator has one active disposable worker, startup/execution timeouts and bounded output. It is not an OS sandbox and has no proven hard process-memory bound. Do not describe the relaxed local design as equivalent to network-isolated containers.
 
 ## Validation evidence
 
-`docker build --target test -t question-bank-prep-test . && docker run --rm question-bank-prep-test` runs `npm run typecheck`, `npm test`, `npm run build` and `npm run test:e2e` on Node 24. `tests/question-format.test.ts` parses every file in `examples/`, so the format guide fails tests when it drifts from the parser. Browser tests run Chromium against isolated local services. The test provider is injected only by tests; normal UI does not fabricate AI responses. Native install/build logs are in ignored `logs/`.
+`docker build --target test -t question-bank-prep-test . && docker run --rm question-bank-prep-test` runs `npm run typecheck`, `npm test`, `npm run build` and `npm run test:e2e` on Node 24. `tests/question-format.test.ts` parses every file in `examples/`, so the format guide fails tests when it drifts from the parser. Browser tests run Chromium against the production build on port 3100 with a fresh temporary database and synthetic reading fixtures. Build first; the suite refuses to reuse an existing server and overrides local password/material settings, so it cannot write test data to the app on port 3000. The tutor payload regression intercepts its request without contacting a provider. Normal UI does not fabricate AI responses. Native install/build logs are in ignored `logs/`.
 
 `tsx scripts/benchmark.ts` imports 10,000 synthetic questions in 100 files and measures indexed search. On this Mac the initial measured import was 7.5 seconds, search p95 was 3.5 ms, peak resident memory about 409 MiB. These are synthetic results, not guarantees for other banks or hardware.
 
 ## Open issues and verification limits
 
-Last checked: 2026-10-16, Docker Node 24 (Debian bookworm); earlier native macOS/Node 26.
+Last checked: 2026-10-17, native Linux with Chrome/Chromium; earlier Docker Node 24 (Debian bookworm) and native macOS/Node 26.
 
-- Original design document and a real question bank were not present. Parser compatibility is established with synthetic fixtures only. Import a representative real chapter before migrating the full library.
+- Automated parser tests use synthetic fixtures. The live application now loads a real question bank and reading material, but that browser check is not a complete content audit.
 - The complete proposed release matrix is not certified: Firefox/WebKit, physical devices, HTTPS deployment, 100,000-section/chat loads, retrieval grounding quality and provider refresh/revocation scenarios need separate checks. AI inside the Docker image (Codex login mount) is untested.
 - Local-file save recovery has API routes but no Settings screen yet (see ops/RECOVERY.md).
 - Changing choice labels does not reparse files whose bytes are unchanged; re-import after editing them.

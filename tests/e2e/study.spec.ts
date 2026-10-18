@@ -8,7 +8,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   request,
 }, testInfo) => {
   const name = `Browser test ${Date.now()}`;
-  const response = await request.post("http://127.0.0.1:3000/api/libraries", {
+  const response = await request.post("/api/libraries", {
     data: { name },
   });
   const library = await response.json();
@@ -68,7 +68,7 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Two pairs make four.")).toBeVisible();
   const state = await request.get(
-    `http://127.0.0.1:3000/api/libraries/${library.id}/overview`,
+    `/api/libraries/${library.id}/overview`,
   );
   expect((await state.json()).counts.unsure).toBe(1);
   // Refresh keeps the open set; Back returns to it from another page.

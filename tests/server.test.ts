@@ -23,6 +23,60 @@ function fixture() {
   return { store, libraryId: library.id, q };
 }
 describe("durable practice contract", () => {
+  it("applies material type changes even when the path and content are unchanged", () => {
+    const { store, libraryId, q } = fixture();
+    const originalFile = store.list(libraryId, "file")[0];
+    const notePreview = store.preview(libraryId, [
+      { path: originalFile.path, content: bank(), type: "note" },
+    ]);
+    store.commit(libraryId, notePreview.id, true);
+
+    expect(store.get(libraryId, originalFile.id, "file")).toMatchObject({
+      type: "note",
+      version: originalFile.version + 1,
+    });
+    expect(store.get(libraryId, q.id, "question").active).toBe(false);
+    expect(store.search(libraryId, "shared")).toMatchObject([
+      { id: originalFile.id, type: "file" },
+    ]);
+
+    const questionPreview = store.preview(libraryId, [
+      { path: originalFile.path, content: bank(), type: "questions" },
+    ]);
+    store.commit(libraryId, questionPreview.id, true);
+    expect(store.get(libraryId, originalFile.id, "file").type).toBe("questions");
+    expect(
+      store.list(libraryId, "question").filter((question) => question.active),
+    ).toHaveLength(1);
+    expect(store.search(libraryId, "shared")).toMatchObject([
+      { type: "question" },
+    ]);
+  });
+
+  it("keeps identical incoming files distinct when a prior file could be a rename", () => {
+    const { store, libraryId, q } = fixture();
+    const preview = store.preview(libraryId, [
+      { path: "first-copy.md", content: bank() },
+      { path: "second-copy.md", content: bank() },
+    ]);
+    store.commit(libraryId, preview.id, true);
+
+    const activeFiles = store
+      .list(libraryId, "file")
+      .filter((file) => file.active);
+    expect(activeFiles.map((file) => file.path).sort()).toEqual([
+      "bank.md",
+      "first-copy.md",
+      "second-copy.md",
+    ]);
+    const questions = store
+      .list(libraryId, "question")
+      .filter((question) => question.active);
+    expect(questions).toHaveLength(3);
+    expect(new Set(questions.map((question) => question.fileId)).size).toBe(3);
+    expect(store.get(libraryId, q.id, "question")).toMatchObject({ active: true });
+  });
+
   it("reopens persisted answers, cursor, source revisions and retry receipts", () => {
     const directory = mkdtempSync(join(tmpdir(), "study-persistence-"));
     const path = join(directory, "study.sqlite");

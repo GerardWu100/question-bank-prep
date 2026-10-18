@@ -252,10 +252,15 @@ function App() {
       { credentials: "same-origin" },
     );
     if (!response.ok) throw new Error(`Could not open ${path}.`);
-    setReadingText(await response.text());
+    const text = await response.text();
+    // Edited material can have fewer sections than the saved bookmark.
+    const sectionIndex = Number.isInteger(section)
+      ? Math.max(0, Math.min(section, splitSections(text).length - 1))
+      : 0;
+    setReadingText(text);
     setReadingPath(path);
-    setReadingSection(section);
-    savePreference("reading", { path, section });
+    setReadingSection(sectionIndex);
+    savePreference("reading", { path, section: sectionIndex });
   };
   const showSection = (section: number) => {
     setReadingSection(section);
@@ -499,6 +504,7 @@ function App() {
       if (
         ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName) ||
         target.isContentEditable ||
+        page !== "Practice" ||
         !question ||
         busy
       )
@@ -508,7 +514,7 @@ function App() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [question, position, activeSet, busy]);
+  }, [page, question, position, activeSet, busy]);
   const annotation = async (values: any) => {
     setSaveStatus("Saving…");
     const result = await api(
@@ -1475,15 +1481,23 @@ function App() {
             ) : (
               <div className="reader">
                 <aside className="reader-files">
-                  {[...new Set(readingFiles.map((f) => f.split("/")[0]))].map(
+                  {[
+                    ...new Set(
+                      readingFiles.map((f) =>
+                        f.includes("/") ? f.split("/")[0] : "",
+                      ),
+                    ),
+                  ].map(
                     (group) => (
                       <details
                         key={group}
-                        open={readingPath.startsWith(`${group}/`)}
+                        open={!group || readingPath.startsWith(`${group}/`)}
                       >
-                        <summary>{group}</summary>
+                        <summary>{group || "General"}</summary>
                         {readingFiles
-                          .filter((f) => f.startsWith(`${group}/`))
+                          .filter((f) =>
+                            group ? f.startsWith(`${group}/`) : !f.includes("/"),
+                          )
                           .map((f) => (
                             <button
                               key={f}
@@ -1884,6 +1898,12 @@ function App() {
                   key={c.id}
                   onClick={() =>
                     void run(async () => {
+                      if (c.readingPath) {
+                        // A reading reply must carry its own section, even when opened from History.
+                        await openReading(c.readingPath, Number.parseInt(c.readingTitle, 10) - 1);
+                        setPage("Materials");
+                        return;
+                      }
                       setChat(await api(chatUrl(c)));
                       setPage("Ask AI");
                     })

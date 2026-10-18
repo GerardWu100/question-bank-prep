@@ -510,6 +510,12 @@ export class Store {
           { issues: preview.issues },
         );
       const existingFiles = this.list(libraryId, "file");
+      const incomingHashCounts = new Map<string, number>();
+      for (const file of preview.files)
+        incomingHashCounts.set(
+          file.hash,
+          (incomingHashCounts.get(file.hash) ?? 0) + 1,
+        );
       const mappedIds = new Set(
         Object.values(identityMappings).filter(
           (value): value is string => typeof value === "string",
@@ -544,7 +550,8 @@ export class Store {
       const claimed = new Set<string>();
       for (const incoming of preview.files) {
         let file = existingFiles.find((f) => f.path === incoming.path);
-        if (!file) {
+        // A rename must be unambiguous on both sides; copied files keep distinct identities.
+        if (!file && incomingHashCounts.get(incoming.hash) === 1) {
           const matches = existingFiles.filter(
             (f) =>
               f.hash === incoming.hash &&
@@ -555,7 +562,8 @@ export class Store {
         if (
           file?.active &&
           file.hash === incoming.hash &&
-          file.path === incoming.path
+          file.path === incoming.path &&
+          file.type === incoming.type
         )
           continue;
         const fileId = file?.id ?? id();
