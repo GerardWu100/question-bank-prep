@@ -43,8 +43,10 @@ First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). T
 ## Tables, diagrams and pictures
 
 - Recreate tables as Markdown tables with the same column order, row order, values and blank cells. No HTML in cells (no `<br>`); separate items in one cell with `; `. The only HTML allowed anywhere is a page marker comment such as `<!-- Source PDF page 12 -->`.
-- Recreate diagrams as Mermaid or readable text diagrams with the same labels and relationships. Do not screenshot diagrams or tables.
-- Save a screenshot only for a study picture that text, a table or a diagram cannot show. Keep image files next to the Markdown and use relative links.
+- Recreate structure diagrams (flows, decision trees, hierarchies, timelines) as Mermaid with the same labels and relationships.
+- Redraw charts and graphs (data or function plots: payoff diagrams, yield and term-structure curves, supply and demand, efficient frontiers, scatter plots, bar and line charts) with a short Python script (`uv run --with matplotlib python`). Use the data, table or equation the page gives; when it gives none, read approximate values off the figure and end the caption with "values approximate". Keep the original title, axes, units, labels, key points and annotations. Save the PNG (white background, about 150 dpi) and its script, with the same name, next to the Markdown, and embed the PNG with a relative link, so the chart can be regenerated or fixed later.
+- Never draw a chart as text or ASCII art, and never screenshot a chart, diagram or table.
+- Save a screenshot only for a picture that Mermaid, a table or a Python chart cannot show (a photo, a scanned form). Keep image files next to the Markdown and use relative links.
 
 ## Check before you deliver
 
