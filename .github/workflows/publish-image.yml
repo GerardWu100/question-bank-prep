@@ -31,6 +31,9 @@ on:
       - tsconfig.json
       - apps/**
       - packages/**
+      # The in-app Guide bundles these at build time.
+      - docs/prompts/**
+      - docs/user/question-format.md
       - .github/workflows/publish-image.yml
   # Manual "Run workflow" button, for example to pick up a new base image.
   workflow_dispatch:

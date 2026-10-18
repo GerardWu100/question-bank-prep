@@ -1,6 +1,6 @@
 # Prompt 3: Review the question bank (dedupe and missing answers)
 
-Step 3 of 3. Removes duplicate and near-duplicate questions across sources, and writes missing answer keys marked as AI-written.
+Step 3 of 3. Removes duplicate and near-duplicate questions across sources, writes missing answer keys, and adds short explanations where a solution is missing or thin, all marked as AI-written.
 
 How to use: fill in **Settings** and give everything below the line to an AI agent. The prompt is self-contained.
 
@@ -19,7 +19,7 @@ How to use: fill in **Settings** and give everything below the line to an AI age
 
 ## Task
 
-First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). Then review SCOPE: dedupe first (Part A), then write missing answers (Part B). Edit only bank files in SCOPE and `TRACKING/review-log.md`. Read MATERIALS and the original PDFs freely, but never edit them. Run every check, update the log, report the counts, then commit and push.
+First pull the latest REPOSITORY (`git pull`; clone it if you do not have it). Then review SCOPE: dedupe first (Part A), then write missing answers (Part B), then write missing explanations (Part C). Edit only bank files in SCOPE and `TRACKING/review-log.md`. Read MATERIALS and the original PDFs freely, but never edit them. Run every check, update the log, report the counts, then commit and push.
 
 Write two small scripts in a scratch folder outside the repository (Python through `uv run python`), and keep their reports there too, never inside BANK: every `.md` file in BANK is read as a question bank.
 
@@ -36,6 +36,7 @@ Write two small scripts in a scratch folder outside the repository (Python throu
 - **AI-written keys**: date, question ID, file, AI key, reference used.
 - **Unresolved (left without a key)**: date, question ID, file, why.
 - **Possible source errors (source key kept)**: date, question ID, file, source key, AI view.
+- **AI explanations**: date, question ID, file, visual used.
 
 A later re-extraction of a source (prompt 2) reapplies this log, so be exact, and always include the source's own ID (a question-bank ID, the source's case number), because extraction-order labels can change.
 
@@ -79,13 +80,44 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
    - Keep any source text already in the solution, and keep the existing `*Source: …*` line last.
 5. **Never change a source key.** If you believe a source key is wrong, leave it and add one line to that solution: `> **Possible source error (AI):** <one-sentence reason>.` Log it.
 
+## Part C: write missing explanations
+
+1. **Find thin solutions.** A solution is *thin* when its text, without the `*Source: …*` and `*Reference: …*` lines, is empty, has fewer than 15 words, or only restates the key or a number without saying why. Have the format check list them. Skip questions that already have an `Intuition (AI)` heading.
+2. **Solve each one yourself** as in Part B steps 2 and 3. If your answer disagrees with the source key, write no explanation; flag it as a possible source error (Part B step 5) instead.
+3. **Write the explanation for a reader who wants few words and strong intuition.**
+   - At most 60 words of prose. Open with the one idea that decides the answer, in plain words.
+   - Add exactly one visual, the one that makes the idea fastest to see: the formula worked with the question's own numbers (define each symbol once), a small table (2–5 rows; for example each choice and why it is right or wrong), or a Mermaid diagram of at most 6 nodes for a process or cause and effect.
+   - Say in one short line why the most tempting wrong choice is wrong, unless the table already shows it.
+   - No restating the question, no LOS text, no filler.
+4. **Place it inside the Solution**, under a sub-heading one level deeper than `Solution`, after the source's own text and before the `*Source: …*` line, which stays last. Never change the source's text. Math as `$…$` and `$$…$$` fences on their own lines, money as `\$`.
+
+   ````markdown
+   #### Solution
+
+   <source text, unchanged>
+
+   ##### Intuition (AI)
+
+   Higher leverage makes equity riskier, so its required return rises with D/E.
+
+   $$
+   r_e = r_0 + (r_0 - r_d)\frac{D}{E} = 10\% + (10\% - 6\%)(0.5) = 12\%
+   $$
+
+   B ignores the debt term: it is just $r_0$.
+
+   *Source: <unchanged>*
+   ````
+
+5. **Log** each one in the review log under **AI explanations**: date, question ID, file, visual used (formula, table or diagram).
+
 ## Finish
 
 1. The format check shows 0 errors, and every question left on its *no valid key* list is logged as unresolved.
-2. `grep -rn "Answer (AI)" <SCOPE> | wc -l` equals the number of AI keys the log lists for files in SCOPE.
+2. `grep -rn "Answer (AI)" <SCOPE> | wc -l` equals the number of AI keys the log lists for files in SCOPE, and `grep -rn "Intuition (AI)" <SCOPE> | wc -l` equals the AI explanations it lists.
 3. Update the Counts table in the log.
 4. Commit and push the study repository. Other sessions may review other topic folders at the same time: before each push run `git pull --rebase`, and if the log conflicts, keep every row from both sides. Never copy question text into a public repository.
 
 ## Report
 
-End with: duplicates removed (questions and cases), groups kept, AI keys written, unresolved questions, possible source errors, and any case these rules did not cover.
+End with: duplicates removed (questions and cases), groups kept, AI keys written, AI explanations written, unresolved questions, possible source errors, and any case these rules did not cover.
