@@ -68,7 +68,7 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
 
    #### Solution
 
-   <worked explanation: formula, numbers, and why each other choice is wrong>
+   <short worked explanation in the Part C style: the deciding idea, the formula with the question's numbers, and why each wrong choice is wrong when the choices are statements>
 
    *Reference: <notes or lecture>, <section> (<concept>).*
 
@@ -82,12 +82,12 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
 
 ## Part C: write missing explanations
 
-1. **Find thin solutions.** A solution is *thin* when its text, without the `*Source: …*` and `*Reference: …*` lines, is empty, has fewer than 15 words, or only restates the key or a number without saying why. Have the format check list them. Skip questions that already have an `Intuition (AI)` heading.
+1. **Find solutions that need help.** Count a solution's words without its `*Source: …*` and `*Reference: …*` lines. **A solution of 40 words or more is kept as it is: add nothing.** A shorter one needs an explanation when it is empty, only restates the key or a number without saying why, or (for a question whose choices are statements or concepts) does not say why the wrong choices are wrong. Use your judgement: a short solution that already makes the answer clear needs nothing. Have the format check list the candidates. Skip questions that already have an `Intuition (AI)` heading.
 2. **Solve each one yourself** as in Part B steps 2 and 3. If your answer disagrees with the source key, write no explanation; flag it as a possible source error (Part B step 5) instead.
 3. **Write the explanation for a reader who wants few words and strong intuition.**
    - At most 60 words of prose. Open with the one idea that decides the answer, in plain words.
    - Add exactly one visual, the one that makes the idea fastest to see: the formula worked with the question's own numbers (define each symbol once), a small table (2–5 rows; for example each choice and why it is right or wrong), or a Mermaid diagram of at most 6 nodes for a process or cause and effect.
-   - Say in one short line why the most tempting wrong choice is wrong, unless the table already shows it.
+   - **Wrong choices.** When the choices are statements or concepts, say why each wrong choice is wrong, one short line each (or as rows of the table). When the choices are just numbers, skip this: the worked formula already shows them wrong. Decide case by case whether a wrong choice needs a line at all; an obviously unrelated choice does not.
    - No restating the question, no LOS text, no filler.
 4. **Place it inside the Solution**, under a sub-heading one level deeper than `Solution`, after the source's own text and before the `*Source: …*` line, which stays last. Never change the source's text. Math as `$…$` and `$$…$$` fences on their own lines, money as `\$`.
 
@@ -104,10 +104,18 @@ A later re-extraction of a source (prompt 2) reapplies this log, so be exact, an
    r_e = r_0 + (r_0 - r_d)\frac{D}{E} = 10\% + (10\% - 6\%)(0.5) = 12\%
    $$
 
-   B ignores the debt term: it is just $r_0$.
-
    *Source: <unchanged>*
    ````
+
+   The choices here are numbers, so there are no wrong-choice lines. For statement choices, a small table does both jobs:
+
+   ```markdown
+   | Choice | Why |
+   |---|---|
+   | A | Wrong: heteroskedasticity biases the standard errors, not the coefficients |
+   | B | Right: the t-statistics are unreliable |
+   | C | Wrong: that is multicollinearity |
+   ```
 
 5. **Log** each one in the review log under **AI explanations**: date, question ID, file, visual used (formula, table or diagram).
 
