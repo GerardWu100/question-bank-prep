@@ -1,49 +1,61 @@
-# PDF-to-Markdown Conversion Prompt
+# Prompt 1: PDF study material → Markdown
 
-Run this in the `cfa` repository (`~/projects/cfa`); `materials/` and `md_materials/` below are relative to it. The conversion is finished; this prompt is kept for reference and for new PDFs.
+Step 1 of 3. Converts exam-prep PDFs into faithful Markdown notes that the study app's Materials page can show and that prompt 2 extracts questions from.
 
-Convert the full study-material PDFs into faithful Markdown lecture notes.
+How to use: open an AI coding session in your study repository, fill in **Settings**, and send everything below the line.
+
+---
+
+## Settings
+
+- **EXAM**: `<exam name and level>`
+- **PDF_FOLDER**: `materials/` (source PDFs, never edited)
+- **OUTPUT_FOLDER**: `md_materials/` (Markdown output, mirrors PDF_FOLDER)
+- **OUTLINE**: `<file listing the exam's topics and chapters in order>`
+- **PDFS**: `<which PDFs to convert, or "all not yet converted">`
+
+## Task
+
+Convert the PDFs in PDFS into faithful Markdown study notes. Convert every page, not a summary or a selection.
 
 ## Content and structure
 
-- Convert every page of each PDF, not a summary or selection.
-- Simplify the slide layout while preserving study content, order, wording, values, and units.
-- Use meaningful topic headings, such as “The Gordon Growth Model.” Remove page-number prefixes and consolidate repeated headings without losing content or changing its order.
-- Heading levels: one `#` for the file title, then `##` for readings and `###` below. A file that covers the whole curriculum (a review or framework) keeps the title as its first `#` and then uses exactly one `#` per CFA topic, with these names in this order: Quantitative Methods, Economics, Financial Statement Analysis, Corporate Issuers, Equity, Fixed Income, Derivatives, Alternative Investments, Portfolio Management, Ethics; its readings are `##`. The study app opens such a file as one section per topic.
-- For practice questions, keep each answer key on its own explicit line (for example `Answer: B`) and keep the question numbering, so questions and keys can be matched later. Keep choice labels as `A.`, `B.`, `C.`.
-- Omit author credits, logos, decorative cover images, and other non-study elements.
+- Simplify the slide layout but keep the study content, its order, wording, values and units.
+- Use meaningful topic headings, such as "The Gordon Growth Model". Remove page-number prefixes, and merge repeated headings without losing content or changing its order.
+- Heading levels: one `#` for the file title, `##` for readings or chapters, `###` and deeper below them.
+- A file that covers the whole syllabus (a review book or a framework) keeps its title as the first `#`, then uses exactly one `#` per exam topic, with the topic names and order from OUTLINE; its readings are `##`. The study app opens such a file as one section per topic.
+- Practice questions: keep each question's numbering, keep choice labels as `A.`, `B.`, `C.`, and keep each answer key on its own explicit line (for example `Answer: B`), so questions and keys can be matched later.
+- Leave out author credits, logos, decorative cover images and other non-study elements.
 - Translate all non-English study text into English.
-- Preserve every exercise and supplied answer. Do not invent answers, fill unsupported blanks, or silently correct apparent source errors. Clearly flag apparent source errors and genuinely unreadable or uncertain content.
+- Keep every exercise and every supplied answer. Do not invent answers, fill unsupported blanks or silently correct apparent source errors. Flag an apparent source error, and unreadable or uncertain content, in place with a short note such as `> Source note: the key says C, but the worked solution gives B.`
 
 ## Equations
 
-- Write inline math as `$...$` and standalone equations as `$$...$$` blocks. Do not use `\(...\)` or `\[...\]`. Write US-dollar amounts as `\$45`, never a bare `$45`, so a price is never read as the start of a formula (details below).
-- A display block's opening and closing `$$` each stand alone on their own line: no text before or after them on that line (not `$$ Actual P/E is…`, not `\end{aligned}$$`). Inside a list item, indent both fences and the formula exactly like the item's text. Reflow surrounding prose where necessary without changing its meaning or content.
+- Inline math is `$...$`; standalone equations are `$$...$$` blocks. Never use `\(...\)` or `\[...\]`.
+- The opening and closing `$$` of a display block each stand alone on their own line, with no text before or after them on that line (not `$$ Actual P/E is…`, not `\end{aligned}$$`). Inside a list item, indent both fences and the formula like the item's text. Reflow the surrounding prose if needed without changing its meaning.
 - Use `&` alignment and `\\` line breaks only inside `\begin{aligned}…\end{aligned}`. Use `\tag` only in display blocks.
-- Verify symbols, subscripts, superscripts, fractions, operators, values, and units against the rendered original slides. Do not rely on extracted text alone.
-- Preserve literal currency symbols as ordinary text; do not turn currency amounts into math solely because they contain a dollar sign. Escape each literal dollar sign in Markdown prose, tables, and non-code annotations as `\$` (a backslash immediately followed by a dollar sign, with no space), for example `\$100`, so it is not confused with a math delimiter.
-- Do not escape actual math delimiters or double-escape an existing `\$`. Within a LaTeX expression, use `\$` when a literal dollar symbol is part of the expression. Preserve formulas, values, and wording.
-- Leave literal dollars inside fenced code blocks, inline code, and Mermaid diagram code unchanged: Markdown math delimiters are not parsed there, and adding a backslash can alter code or display an unwanted backslash in a diagram label.
-- After all conversions are finished, recheck every equation against the original PDF and confirm the delimiter rules above. Formatting changes must not alter the formulas.
+- Check symbols, subscripts, superscripts, fractions, operators, values and units against the rendered pages, not against extracted text alone.
+- Money: write a literal dollar sign as `\$` (backslash, then dollar, no space), for example `\$100`, in prose, tables and annotations, so it is never read as the start of a formula. Do not turn amounts into math. Do not escape real math delimiters or double-escape an existing `\$`; inside a formula, use `\$` for a literal dollar symbol.
+- Leave dollar signs in fenced code, inline code and Mermaid code unchanged: math is not parsed there, and a backslash would show or break the code.
+- When all conversions are finished, recheck every equation against the PDF and the delimiter rules above. Formatting must never change a formula.
 
-## Tables, diagrams, and pictures
+## Tables, diagrams and pictures
 
-- Recreate tables as Markdown tables, preserving column order, row order, values, and blank cells. Do not put HTML in cells (no `<br>`); separate items in one cell with `; `. The only HTML allowed anywhere is a page marker comment such as `<!-- Source PDF page 12 -->`.
-- Recreate diagrams in Mermaid or readable text diagrams. Preserve their labels and relationships; do not screenshot diagrams or tables.
-- Screenshot only study-related pictures that cannot be represented as text, tables, or diagrams. Save necessary image assets alongside the Markdown and use relative image links.
+- Recreate tables as Markdown tables with the same column order, row order, values and blank cells. No HTML in cells (no `<br>`); separate items in one cell with `; `. The only HTML allowed anywhere is a page marker comment such as `<!-- Source PDF page 12 -->`.
+- Recreate diagrams as Mermaid or readable text diagrams with the same labels and relationships. Do not screenshot diagrams or tables.
+- Save a screenshot only for a study picture that text, a table or a diagram cannot show. Keep image files next to the Markdown and use relative links.
 
-## Inspection and verification
+## Check before you deliver
 
-- Inspect the rendered pages as well as extracted text so image-based content and corrupted formulas are not missed.
-- Verify completeness and accuracy before delivery, including content from every page, exercises, supplied answers, equations, tables, diagrams, and required pictures.
-- Check the rendered Markdown to ensure math delimiters, tables, diagrams, and image links work as intended. The study app's Materials page (`READING_ROOT` pointing at `md_materials/`) renders math, Mermaid and images the same way the app will; red formula text there is a KaTeX error to fix. Quick text checks: `grep -nE '^\s*\$\$.+|.+\$\$\s*$' <file>` should list only one-line `$$…$$` formulas, and `grep -n '\\(' <file>` should find no `\(` math.
-- Report any unresolved source uncertainty explicitly rather than guessing.
+- Look at the rendered pages as well as the extracted text, so image-only content and broken formulas are not missed.
+- Confirm completeness: every page, exercise, supplied answer, equation, table, diagram and needed picture is present.
+- Check that the Markdown renders: math, tables, diagrams and image links. The study app's Materials page (`READING_ROOT` pointing at OUTPUT_FOLDER) renders exactly as the app will; red formula text there is a KaTeX error to fix.
+- Quick text checks on each file: `grep -nE '^\s*\$\$.+|.+\$\$\s*$' <file>` lists only one-line `$$…$$` formulas, and `grep -n '\\(' <file>` finds no `\(` math.
+- Report every unresolved uncertainty in the source instead of guessing.
 
-## Output and GitHub workflow
+## Output and version control
 
-- Leave every original PDF untouched.
-- Put final outputs under `md_materials/`, mirroring the source folder structure under `materials/`.
-- Within the corresponding mirrored folder, use a descriptive per-PDF task folder containing one final Markdown version and any necessary image assets.
-- Process the PDFs one by one. Finish and verify one PDF, then commit and push that PDF's final outputs to GitHub before proceeding to the next.
-- Keep one final version of each deliverable. Remove only task-created temporary files; preserve original files and unrelated work.
-- Do the work using the assistant's own cloud tools and the connected GitHub service. Do not use my computer or create a Codex task.
+- Never change the original PDFs.
+- Write outputs under OUTPUT_FOLDER, mirroring the folders under PDF_FOLDER. Inside each mirrored folder, use one descriptive folder per PDF with one final Markdown file and its images.
+- Work one PDF at a time: finish and check it, then commit and push its output before you start the next.
+- Keep one final version of each file. Remove only temporary files you created; keep original files and unrelated work.

@@ -114,13 +114,13 @@ Set `READING_ROOT` in `.env` to a folder of Markdown study material (for example
 
 **Resume last session**, at the top of Practice, reopens the last set used in this browser for the selected library at its exact saved question, even if that question is answered. It does not create a new set. The button is disabled until a valid session exists; the selected library is remembered after reload. Chapter **Start / Continue** keeps its existing first-unanswered behavior. Four compact result counters appear above the topic list, and topic/chapter controls and collapsed note cards use less vertical space; the fonts and reading/question layouts are unchanged.
 
-## CFA material prompts
+## Building a question bank: three prompts
 
-The prompts below and the two skills (`.agents/skills/cfa-question-bank`, `.agents/skills/cfa-question-review`) are kept identical in this repository and in `cfa`. The CFA Level II bank is built in three steps, both run in the private `cfa` repository so no study text lands in this public repository:
+Three self-contained prompts turn exam-prep PDFs into a bank this app imports. They work for any exam: each starts with a short **Settings** block (exam, folders, the outline file that lists topics and chapters, and a tracking folder for the source list and review log). Run them in your own study repository, which should stay private when it holds copyrighted material; this public repository holds only the prompts. Identical copies live in the `cfa` repository.
 
-1. **PDF → Markdown:** [docs/prompts/pdf-to-markdown.md](docs/prompts/pdf-to-markdown.md) converted `materials/` PDFs into `md_materials/` (finished).
-2. **Markdown → question bank:** send [docs/prompts/extract-questions.md](docs/prompts/extract-questions.md); it runs the `cfa-question-bank` skill in `cfa/.agents/skills/cfa-question-bank/` (`SKILL.md`, `template.md`, `sources.md`), which extracts questions into `cfa/question_bank/<NN-topic>/<source>.md`.
-3. **Dedupe and missing answers:** send [docs/prompts/review-questions.md](docs/prompts/review-questions.md); the `cfa-question-review` skill removes duplicate and near-duplicate questions (`npm run find-duplicates -- <bank-folder>` lists candidates) and writes missing keys under an `Answer (AI)` heading; the app keeps that marker in its data but does not show it while you practise.
+1. **PDF → Markdown:** [docs/prompts/pdf-to-markdown.md](docs/prompts/pdf-to-markdown.md) converts PDFs into faithful Markdown notes, which the Materials page can show (`READING_ROOT`).
+2. **Markdown → question bank:** [docs/prompts/extract-questions.md](docs/prompts/extract-questions.md) copies multiple-choice questions word for word into `question_bank/<NN-topic>/<source>.md`, checked with `npm run check-bank`.
+3. **Dedupe and missing answers:** [docs/prompts/review-questions.md](docs/prompts/review-questions.md) removes duplicate and near-duplicate questions (`npm run find-duplicates -- <topic-folder>` lists candidates) and writes missing keys under an `Answer (AI)` heading; the app keeps that marker in its data but does not show it while you practise.
 
 ## AI and calculator
 
