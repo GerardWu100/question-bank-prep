@@ -1,6 +1,6 @@
 # Question Bank Prep
 
-**A self-hosted practice app for the CFA® exam and other multiple-choice exams, with an AI tutor built in.** Keep your question banks as plain Markdown, practise them by topic and chapter, see exactly where you lose marks, and get hints, explanations and a study review from an AI tutor that reads and cites your own notes.
+**A self-hosted practice app for the CFA® exam and other multiple-choice exams, with an AI tutor built in.** Keep your question banks as plain Markdown, practise them by topic and chapter, see exactly where you lose marks, and get hints, explanations and a study review from an AI tutor that reads and cites your own notes. Three [ready prompts](#build-a-bank-from-your-pdfs-three-prompts) let an AI agent turn your study PDFs into notes and a clean question bank.
 
 [![Tests](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml/badge.svg)](https://github.com/GerardWu100/question-bank-prep/actions/workflows/tests.yml)
 [![Docker image](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/GerardWu100/question-bank-prep/pkgs/container/question-bank-prep)
