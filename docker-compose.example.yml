@@ -47,26 +47,13 @@ services:
       - $HOME/projects/cfa/question_bank:/question_bank:ro
       # Study notes shown on the Materials page and searched by the tutor:
       - $HOME/projects/cfa/md_materials:/materials:ro
-      # Your Codex ChatGPT login, for the tutor: only the login file and the
-      # model list, never the whole ~/.codex folder (chat history, config and
-      # other secrets stay out of the container). Read-only: Codex on this
-      # machine keeps refreshing the file in place; the app never does.
-      # create_host_path: false makes Compose stop with an error when a file
-      # is missing, instead of creating an empty folder in its place. After
-      # `codex logout` and a new login, restart the container. Remove both
-      # entries to run without AI.
-      - type: bind
-        source: ${HOME}/.codex/auth.json
-        target: /codex/auth.json
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${HOME}/.codex/models_cache.json
-        target: /codex/models_cache.json
-        read_only: true
-        bind:
-          create_host_path: false
+      # The ChatGPT sign-in folder: only its auth.json is read. Make the file with
+      # one-time-projects/codex-auth-maker (no Codex CLI needed); the app then
+      # refreshes it and keeps a lock folder beside it, so mount it read-write and
+      # make it writable by the user above. A Codex CLI folder (~/.codex) also
+      # works, read-only in effect: Codex keeps refreshing it. Without a sign-in
+      # only the ChatGPT connection is off; API-key connections still answer.
+      - ${CODEX_AUTH_DIR:-${HOME}/.codex-auth}:/codex
     networks:
       - single
 

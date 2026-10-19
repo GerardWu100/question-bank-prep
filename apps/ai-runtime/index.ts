@@ -1,9 +1,9 @@
-import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex';
 import { stream as codexStream } from '@earendil-works/pi-ai/api/openai-codex-responses';
-import { normalizeContext, type AssistantMessageEvent, type Context, type Tool } from '@earendil-works/pi-ai';
+import { createModels, getSupportedThinkingLevels, normalizeContext, type AssistantMessageEvent, type Context, type Model, type Tool } from '@earendil-works/pi-ai';
+import { CODEX_PROVIDER_ID, CodexAuthFileStore } from './codex_auth_file_store.mjs';
 import type { ModelUsageLimit } from './usage-limit.js';
 
 export const MAX_PROMPT_LENGTH = 80_000;
@@ -12,12 +12,10 @@ const MAX_REPLY_LENGTH = 100_000;
 const MAX_MODEL_STEPS = 6;
 const MAX_TOOL_CALLS_PER_STEP = 8;
 const TOOL_RESULT_CHARACTERS = 24_000;
-/** Thinking levels the pinned adapter accepts, lowest to highest. */
-export const THINKING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+/** Thinking levels pi-ai can send, lowest to highest ("off" is never offered). */
+export const THINKING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
-type CatalogEntry = { slug: string; display_name?: string; visibility?: string; default_reasoning_level?: string; supported_reasoning_levels?: { effort: string }[] };
 export const REQUEST_TIMEOUT_MS = 120_000;
-const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export type AIEvent = { type: 'text'; text: string } | { type: 'thinking'; text: string } | { type: 'done'; model: string; provider: string } | { type: 'error'; code: string; message: string };
 export interface ModelStatus { id: string; name: string; enabled: boolean; reason?: string; efforts: ThinkingEffort[]; defaultEffort?: ThinkingEffort }
 export interface AccountStatus { available: boolean; provider: string; route: string; reason?: string; models: ModelStatus[] }
@@ -90,45 +88,78 @@ export async function* streamWithTools(
   finally { clearTimeout(timer); request.signal?.removeEventListener('abort', abort); }
 }
 
-/** Read existing subscription credentials without copying or refreshing Codex's rotating session. */
-export class SubscriptionProvider implements StudyProvider {
-  private readonly codexDirectory: string;
-  /** Every model request, tool rounds included, passes this project-wide cap first. */
-  private readonly usageLimit?: ModelUsageLimit;
-  constructor(codexDirectory = process.env.CODEX_HOME || join(homedir(), '.codex'), usageLimit?: ModelUsageLimit) { this.codexDirectory = codexDirectory; this.usageLimit = usageLimit; }
+/**
+ * Where the ChatGPT sign-in file is: CODEX_AUTH_FILE, else $CODEX_HOME/auth.json, else
+ * ~/.codex/auth.json. A file made by codex-auth-maker is app-owned and refreshed here; a
+ * Codex CLI file is only read (see codex_auth_file_store.mjs).
+ */
+export function defaultCodexAuthFile(): string {
+  return process.env.CODEX_AUTH_FILE || join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'auth.json');
+}
 
-  private async credentials(): Promise<{ access: string; catalog: CatalogEntry[] }> {
-    let auth;
-    let catalog;
-    try {
-      auth = JSON.parse(await readFile(join(this.codexDirectory, 'auth.json'), 'utf8'));
-      catalog = JSON.parse(await readFile(join(this.codexDirectory, 'models_cache.json'), 'utf8'));
-    } catch { throw new Error('Codex subscription credentials or account model catalog are unavailable. Sign in with ChatGPT in Codex and refresh its model list, or choose an API key in Settings.'); }
-    if (auth.auth_mode !== 'chatgpt' || typeof auth.tokens?.access_token !== 'string') throw new Error('Codex is not signed in with ChatGPT. This route never reads a Codex API key; choose an API key in Settings instead.');
-    let claims;
-    try { claims = JSON.parse(Buffer.from(auth.tokens.access_token.split('.')[1], 'base64url').toString()); }
-    catch { throw new Error('Codex subscription token format is unsupported.'); }
-    if (typeof claims.exp !== 'number' || claims.exp * 1000 < Date.now() + 60_000) throw new Error('Codex subscription token expired. Refresh your sign-in in Codex; this app does not rotate its credentials.');
-    if (!Array.isArray(catalog.models) || !Number.isFinite(Date.parse(catalog.fetched_at)) || Date.now() - Date.parse(catalog.fetched_at) > CATALOG_MAX_AGE_MS) throw new Error('Codex account model catalog is missing or stale. Open Codex to refresh it.');
-    return { access: auth.tokens.access_token, catalog: catalog.models };
+/** Codex models offered when the connection lists none, in menu order. */
+export const DEFAULT_CODEX_MODELS = ['gpt-6.1-sol', 'gpt-6-luna'];
+/** Effort sent when the request names none the model supports. */
+const PREFERRED_DEFAULT_EFFORT: ThinkingEffort = 'medium';
+/** A borrowed (Codex CLI) token closer than this to expiry counts as expired: this app cannot refresh it. */
+const BORROWED_MIN_VALIDITY_MS = 60_000;
+
+/** Thinking levels pi-ai can send for a model, in THINKING_EFFORTS order, without "off". */
+export function modelEfforts(model: Model<any>): ThinkingEffort[] {
+  const supported = new Set<string>(getSupportedThinkingLevels(model));
+  return THINKING_EFFORTS.filter(effort => supported.has(effort));
+}
+
+/** The level to send: the requested one when supported, else "medium" when supported, else the lightest. */
+export function defaultEffort(efforts: ThinkingEffort[]): ThinkingEffort | undefined {
+  return efforts.includes(PREFERRED_DEFAULT_EFFORT) ? PREFERRED_DEFAULT_EFFORT : efforts[0];
+}
+
+/**
+ * Tutor replies on a ChatGPT subscription through pi-ai's Codex transport.
+ *
+ * The sign-in is a Codex-format auth.json. Its `refresh_owner` marker decides who
+ * refreshes it: app-owned files (codex-auth-maker) are refreshed here under the shared
+ * lock; Codex CLI files are read only, so an expired one fails and the next connection
+ * answers. The offered models are `modelIds` limited to the pinned pi-ai Codex catalog.
+ */
+export class SubscriptionProvider implements StudyProvider {
+  constructor(
+    private readonly authFile = defaultCodexAuthFile(),
+    private readonly usageLimit?: ModelUsageLimit,
+    private readonly modelIds: () => string[] = () => DEFAULT_CODEX_MODELS,
+  ) {}
+
+  /** Why the sign-in cannot be used now, without any network call; undefined when usable. */
+  private async signInProblem(store: CodexAuthFileStore): Promise<string | undefined> {
+    const credential = await store.read(CODEX_PROVIDER_ID).catch(() => undefined);
+    if (!credential) return 'No ChatGPT sign-in found. Make one with codex-auth-maker (or `codex login`), or add an API key.';
+    if (await store.isBorrowed() && credential.expires < Date.now() + BORROWED_MIN_VALIDITY_MS) return 'The Codex CLI sign-in expired. Open Codex to refresh it; this app never refreshes a Codex CLI login.';
+    return undefined;
+  }
+
+  /** The access token, refreshed first when the sign-in is app-owned and due. Throws a safe message. */
+  private async accessToken(): Promise<string> {
+    const store = new CodexAuthFileStore(this.authFile);
+    const problem = await this.signInProblem(store);
+    if (problem) throw new Error(problem);
+    const models = createModels({ credentials: store });
+    models.setProvider(openaiCodexProvider());
+    let resolved;
+    try { resolved = await models.getAuth(CODEX_PROVIDER_ID); } catch { resolved = undefined; }
+    if (!resolved?.auth.apiKey) throw new Error(store.borrowedRefreshAttempted ? 'The Codex CLI sign-in expired. Open Codex to refresh it.' : 'The ChatGPT sign-in could not be refreshed. Make a new one with codex-auth-maker.');
+    return resolved.auth.apiKey;
   }
 
   async status(): Promise<AccountStatus> {
-    let reason: string | undefined;
-    let catalog: CatalogEntry[] = [];
-    try { catalog = (await this.credentials()).catalog; } catch (error) { reason = (error as Error).message; }
-    // Every model Codex lists for this account (hidden internal ones skipped), in Codex's
-    // order; usable only when the pinned adapter can call it.
-    const supported = new Set(openaiCodexProvider().getModels().map(model => model.id));
-    const models = catalog
-      .filter(entry => entry.visibility !== 'hide')
-      .map(entry => {
-        // Thinking levels: what Codex lists for the model, limited to what the adapter can send.
-        const efforts = THINKING_EFFORTS.filter(effort => (entry.supported_reasoning_levels ?? []).some(level => level.effort === effort));
-        const defaultEffort = efforts.find(effort => effort === entry.default_reasoning_level);
-        return { id: entry.slug, name: entry.display_name || entry.slug, enabled: !reason && supported.has(entry.slug), reason: supported.has(entry.slug) ? undefined : 'Not supported by the pinned subscription adapter.', efforts, defaultEffort };
-      });
-    return { available: models.some(model => model.enabled), provider: 'openai-codex', route: 'ChatGPT subscription · read-only Codex login', reason, models };
+    const reason = await this.signInProblem(new CodexAuthFileStore(this.authFile));
+    const catalog = new Map(openaiCodexProvider().getModels().map(model => [model.id, model]));
+    const models = this.modelIds().map(id => {
+      const model = catalog.get(id);
+      const efforts = model ? modelEfforts(model) : [];
+      return { id, name: model?.name ?? id, enabled: !reason && Boolean(model), reason: model ? undefined : 'Not in the pinned pi-ai Codex catalog.', efforts, defaultEffort: defaultEffort(efforts) };
+    });
+    return { available: models.some(model => model.enabled), provider: CODEX_PROVIDER_ID, route: 'ChatGPT subscription', reason, models };
   }
 
   async models(): Promise<ModelStatus[]> { return (await this.status()).models; }
@@ -137,17 +168,15 @@ export class SubscriptionProvider implements StudyProvider {
   async *stream(request: AIRequest): AsyncGenerator<AIEvent> {
     if (typeof request.prompt !== 'string' || request.prompt.length > MAX_PROMPT_LENGTH) { yield { type: 'error', code: 'invalid_prompt', message: 'Prompt exceeds the supported size.' }; return; }
     const account = await this.status();
-    if (!account.models.some(model => model.id === request.model && model.enabled)) { yield { type: 'error', code: 'setup_required', message: account.reason ?? 'Selected model is unavailable. No model was substituted.' }; return; }
+    const status = account.models.find(model => model.id === request.model && model.enabled);
+    if (!status) { yield { type: 'error', code: 'setup_required', message: account.reason ?? `Model ${request.model} is not offered on the ChatGPT subscription.` }; return; }
     const model = openaiCodexProvider().getModels().find(model => model.id === request.model)!;
-    // Always send a level so the library's choice applies: the requested level when the
-    // model supports it, else the model's catalog default. A summary is requested ('auto')
-    // so the UI can show the reasoning; short reasoning may return none.
-    const status = account.models.find(entry => entry.id === request.model)!;
+    // Always send a level: without one pi-ai's Codex transport switches reasoning off. A
+    // summary is requested ('auto') so the UI can show the reasoning; short reasoning may return none.
     const effort = status.efforts.find(level => level === request.effort) ?? status.defaultEffort;
     let access: string;
-    try { ({ access } = await this.credentials()); } catch (error) { yield { type: 'error', code: 'setup_required', message: (error as Error).message }; return; }
-    // Direct API adapter bypasses pi-ai credential/environment resolution and token refresh.
+    try { access = await this.accessToken(); } catch (error) { yield { type: 'error', code: 'setup_required', message: (error as Error).message }; return; }
     const call: ModelCall = (context, signal) => codexStream(model, context, { apiKey: access, signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) });
-    yield* streamWithTools(request, call, { model: model.id, provider: model.provider }, this.usageLimit, () => 'Subscription request failed. Check Codex sign-in and account availability.');
+    yield* streamWithTools(request, call, { model: model.id, provider: model.provider }, this.usageLimit, () => 'Subscription request failed. Check the ChatGPT sign-in and account availability.');
   }
 }

@@ -1,21 +1,28 @@
 # AI adapters
 
-Two routes, chosen in Settings → AI provider and stored in `ai-settings.json` in the data folder: the Codex subscription below, or `ApiKeyProvider` (`api-key.ts`), which sends Chat Completions requests to any OpenAI-compatible base URL with the user's key and listed model IDs. Both share `streamWithTools` (tool rounds, size limits, timeout) and the project-wide `ModelUsageLimit`. The rest of this file describes the subscription route.
+`ConfigurableProvider` (`api-key.ts`) is what the server uses. It reads the connection list from `ai-settings.json` in the data folder on every call (Settings → AI provider). Each connection is one of:
 
-## Subscription route
+- **ChatGPT subscription** — `SubscriptionProvider` (`index.ts`), pinned `@earendil-works/pi-ai` 1.3.0 through its `openai-codex-responses` transport.
+- **API key** — `ApiKeyProvider` (`api-key.ts`): Anthropic's Messages API when the base URL is `api.anthropic.com`, else OpenAI-compatible Chat Completions against any base URL.
 
-The server uses pinned `@earendil-works/pi-ai` 1.2.0 through its legacy `openai-codex-responses` transport. It reads the existing Codex ChatGPT access token and recent Codex account model cache on each request. It neither copies credentials nor refreshes them; Codex remains the only refresh owner. Missing, expired, unsupported or Codex API-key credentials disable this route (a Codex `apikey` login is never read; use the API-key route instead). Every request sends a reasoning level (the library's choice when the model supports it, else the model's catalog default) and asks for a detailed reasoning summary, which streams as `thinking` events and is saved on the reply; brief reasoning may produce no summary. Every model in the Codex account catalog that is not marked hidden is offered; a model is usable only when the pinned adapter also supports it. No environment API key is read and no model fallback is performed.
+All share `streamWithTools` (tool rounds, size limits, timeout) and the project-wide `ModelUsageLimit`.
 
-The model catalog is Codex's account cache, with a 24-hour freshness bound, rather than a fresh entitlement guarantee. A provider rejection still fails the run. Open Codex to refresh an expired session or stale catalog. Operating-system-only credential storage is not supported by this adapter. Tokens are never returned to the browser, saved to the database or included in error messages.
+## Fallback
 
-The newer pi-ai OpenAI subscription OAuth flow has a separate issued client identifier and direct-token scope. This app does not silently initiate that flow or move the user's session into a second refresh owner.
+The list order is the fallback order. A reply goes to the connection that offers the chosen model. If it fails before any text or reasoning reaches the user (`setup_required`, `provider_error`, `interrupted`, `incomplete`), each other connection with an enabled model answers in turn with its first model. `done` names the model and connection that answered, and the chat saves those. Usage limits, a cancel, the output limit and the tool-step limit are final. When every connection fails, one error lists each connection's reason.
+
+## ChatGPT sign-in
+
+The sign-in is a Codex-format `auth.json`: `CODEX_AUTH_FILE`, else `$CODEX_HOME/auth.json`, else `~/.codex/auth.json`. `codex_auth_file_store.mjs` is an unchanged copy of the canonical store in `one-time-projects/codex-auth-maker` (keep them equal; `.d.mts` holds its types):
+
+- A file with `"refresh_owner": "pi-ai"` (made by codex-auth-maker) is app-owned. pi-ai refreshes it through the store under a cross-process lock beside the file, which every app sharing the file uses. This is how a server runs without the Codex CLI.
+- A file without the marker belongs to the Codex CLI and is only read. An expired one disables the connection until Codex refreshes it.
+- A Codex `apikey` login is never read; add an API-key connection instead.
+
+Offered ChatGPT models are the IDs listed on the connection that the pinned pi-ai Codex catalog knows (default `gpt-6.1-sol`, `gpt-6-luna`). Codex's own `models_cache.json` is not read. Every request sends a thinking level (requested, else `medium`, else the lightest the model supports), because the transport turns reasoning off without one, and asks for a reasoning summary, which streams as `thinking` events.
+
+Tokens and keys are never returned to the browser, saved to the database or included in error messages.
 
 Replies finish only on the transport's terminal `done` event with a stop reason. Partial text remains marked failed, interrupted or cancelled otherwise. Library tools are server-scoped and bounded to six tool rounds. Hint mode excludes keys, solutions, notes and solved prior conversations from retrieval. The model can independently solve a visible question; this filtering is not a guarantee about model behavior.
 
-Sources checked during implementation:
-
-- [pi-ai provider and credential documentation](https://github.com/earendil-works/pi/blob/main/packages/ai/README.md)
-- [Official Codex authentication documentation](https://developers.openai.com/codex/auth)
-- Installed package source: `dist/providers/openai-codex.js`, `dist/api/openai-codex-responses.js`, and `dist/auth/oauth/openai-chatgpt.js`.
-
-Live validation completed with the existing subscription: GPT-6 Luna and GPT-6.1 Sol each streamed a response to completion; Luna also performed a tool round trip. Revoked-session and refresh behavior are covered by fail-closed handling, but no real session was revoked or rotated for a test.
+Live check 2026-10-18: with an invalid Anthropic key first and the ChatGPT subscription second, the Anthropic request failed and `gpt-6-luna` answered through the fallback. A real refresh of an app-owned sign-in has not been exercised yet.

@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import staticFiles from "@fastify/static";
 import { buildApp, LOOPBACK_HOSTS } from "./app.js";
 import { AppError } from "./store.js";
-import { SubscriptionProvider } from "../../ai-runtime/index.js";
+import { defaultCodexAuthFile } from "../../ai-runtime/index.js";
 import { AISettingsFile, ConfigurableProvider } from "../../ai-runtime/api-key.js";
 import { ModelUsageLimit } from "../../ai-runtime/usage-limit.js";
 import { calculate } from "../../calculator/index.js";
@@ -46,10 +46,11 @@ const { app, store } = await buildApp({
   databasePath: resolve(dataDirectory, "study.sqlite"),
   password: process.env.STUDY_PASSWORD,
   logger: true,
-  // Settings → AI provider picks the Codex login or an API key; the choice lives in the data folder.
+  // Settings → AI provider lists the connections (ChatGPT sign-in, API keys) in fallback
+  // order; the list lives in the data folder. CODEX_AUTH_FILE names the ChatGPT sign-in.
   provider: new ConfigurableProvider(
     new AISettingsFile(resolve(dataDirectory, "ai-settings.json")),
-    new SubscriptionProvider(undefined, usageLimit),
+    defaultCodexAuthFile(),
     usageLimit,
   ),
   calculator: calculate,

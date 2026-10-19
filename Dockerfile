@@ -27,11 +27,11 @@ RUN npm run build
 #   /data            database and backups (writable)
 #   /question_bank   question-bank folder, synced on open (read-only)
 #   /materials       study notes for the Materials page and the tutor (read-only)
-#   /codex           auth.json and models_cache.json from an existing Codex ChatGPT
-#                    login, mounted as single files (read-only)
+#   /codex           folder holding the ChatGPT sign-in auth.json (read-write, so an
+#                    app-owned sign-in can be refreshed)
 # HOME=/tmp lets the app run as any user id without a home folder.
 ENV STUDY_HOST=0.0.0.0 STUDY_PORT=3000 STUDY_DATA_DIR=/data \
-    MATERIAL_ROOT=/question_bank READING_ROOT=/materials CODEX_HOME=/codex HOME=/tmp
+    MATERIAL_ROOT=/question_bank READING_ROOT=/materials CODEX_AUTH_FILE=/codex/auth.json HOME=/tmp
 EXPOSE 3000
 # node runs the TypeScript server through tsx directly; no npm process wrapper.
 CMD ["node", "--import", "tsx", "apps/server/src/index.ts"]

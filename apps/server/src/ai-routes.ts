@@ -83,7 +83,7 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
     }
   app.addHook('onClose', async () => { for (const controller of active.values()) controller.abort(); await Promise.allSettled(work); });
   app.get('/api/models', async () => options.provider ? options.provider.status() : { models: [], available: false, reason: 'No AI provider is configured.' });
-  // AI provider settings (route, endpoint, key, model list) are app-wide, not per library.
+  // AI connections (kind, endpoint, key, model list, fallback order) are app-wide, not per library.
   const configurable = options.provider instanceof ConfigurableProvider ? options.provider : undefined;
   if (configurable) {
     app.get('/api/ai-settings', async () => configurable.settingsFile.publicView());
@@ -91,8 +91,10 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
       try { return configurable.settingsFile.update(request.body ?? {}); }
       catch (error) { throw new AppError(400, 'INVALID_AI_SETTINGS', (error as Error).message); }
     });
-    app.get('/api/ai-settings/remote-models', async () => {
-      try { return { models: await configurable.apiKey.remoteModels() }; }
+    app.get('/api/ai-settings/remote-models', async (request: any) => {
+      const connection = configurable.apiConnection(String(request.query?.connection ?? ''));
+      if (!connection) throw new AppError(404, 'CONNECTION_NOT_FOUND', 'Save this API connection first.');
+      try { return { models: await connection.remoteModels() }; }
       catch (error) { throw new AppError(502, 'MODEL_LIST_FAILED', `Could not load the endpoint's models: ${(error as Error).message}`); }
     });
   }

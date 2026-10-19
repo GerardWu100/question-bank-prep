@@ -20,19 +20,32 @@ describe('bounded Python worker', () => {
   });
 });
 
-describe('subscription billing policy', () => {
-  it('does not use API keys when subscription credentials are absent or expired', async () => {
+describe('ChatGPT subscription sign-in', () => {
+  const token = (exp: number) => `x.${Buffer.from(JSON.stringify({ exp, 'https://api.openai.com/auth': { chatgpt_account_id: 'acct' } })).toString('base64url')}.x`;
+  it('never reads a Codex API key and refuses an expired borrowed (Codex CLI) login', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'study-auth-test-'));
     try {
-      const provider = new SubscriptionProvider(directory);
+      const authFile = join(directory, 'auth.json');
+      const provider = new SubscriptionProvider(authFile);
       expect((await provider.status()).available).toBe(false);
-      await writeFile(join(directory, 'auth.json'), JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'fake-test-value' }));
-      await writeFile(join(directory, 'models_cache.json'), JSON.stringify({ fetched_at: new Date().toISOString(), models: [{ slug: 'gpt-6-luna' }] }));
-      expect((await provider.status()).reason).toContain("never reads a Codex API key");
+      await writeFile(authFile, JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'fake-test-value' }));
+      expect((await provider.status()).reason).toContain('No ChatGPT sign-in');
       const events = []; for await (const event of provider.stream({ model: 'gpt-6-luna', prompt: 'hello' })) events.push(event);
       expect(events).toMatchObject([{ type: 'error', code: 'setup_required' }]);
-      await writeFile(join(directory, 'auth.json'), JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: `x.${Buffer.from(JSON.stringify({ exp: 1 })).toString('base64url')}.x` } }));
+      await writeFile(authFile, JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: token(1), refresh_token: 'r' } }));
       expect((await provider.status()).reason).toContain('expired');
+    } finally { await rm(directory, { recursive: true }); }
+  });
+  it('offers the listed models the pinned catalog knows, with their thinking levels', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'study-auth-test-'));
+    try {
+      const authFile = join(directory, 'auth.json');
+      // App-owned (codex-auth-maker) and still valid: usable without any network call.
+      await writeFile(authFile, JSON.stringify({ auth_mode: 'chatgpt', refresh_owner: 'pi-ai', tokens: { access_token: token(Math.floor(Date.now() / 1000) + 3600), refresh_token: 'r' } }));
+      const status = await new SubscriptionProvider(authFile, undefined, () => ['gpt-6.1-sol', 'no-such-model']).status();
+      expect(status.available).toBe(true);
+      expect(status.models).toMatchObject([{ id: 'gpt-6.1-sol', enabled: true, defaultEffort: 'medium' }, { id: 'no-such-model', enabled: false }]);
+      expect(status.models[0].efforts).toContain('high');
     } finally { await rm(directory, { recursive: true }); }
   });
 });

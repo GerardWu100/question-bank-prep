@@ -44,7 +44,7 @@ Commercial question banks lock your answers inside their site, and flashcard app
 | **Review my study** | Finds your weak concepts and names the next three chapters to practise |
 | **Cites your notes** | Searches your notes and names the file and section it used |
 
-It runs on your ChatGPT subscription (through the Codex login) or on your own API key: OpenRouter (including free models), OpenAI, or any OpenAI-compatible service. Choose in **Settings → AI provider**. Practice works fully without AI.
+It runs on your ChatGPT subscription and on your own API keys at the same time: Anthropic, OpenAI, OpenRouter (including free models), or any OpenAI-compatible service. List them in **Settings → AI provider**; when one fails, the next one answers. Practice works fully without AI.
 
 ## Get started
 
