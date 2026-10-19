@@ -22,9 +22,9 @@ services:
       # internet, or use "127.0.0.1:6848:3000" to keep it to the server itself.
       - "6848:3000"
     restart: unless-stopped
-    # Run as your own user so the database belongs to you and the read-only
-    # Codex login (mode 600) stays readable. Change both if `id -u` and
-    # `id -g` on the server do not print 1000.
+    # Run as your own user so the database belongs to you and the ChatGPT
+    # sign-in (mode 600, owned by you) stays readable and refreshable. Change
+    # both if `id -u` and `id -g` on the server do not print 1000.
     user: "1000:1000"
     environment:
       - TZ=America/Toronto
@@ -33,8 +33,8 @@ services:
       # Set to true only when a reverse proxy serves this app over HTTPS: the
       # login cookie is then marked Secure. Keep false when reached directly.
       - TRUST_PROXY=false
-      # Most Codex model requests the whole app may send, so a leaked password
-      # cannot drain your ChatGPT plan. One tutor reply is 1 request plus 1 per
+      # Most AI model requests the whole app may send (all connections, backups
+      # included), so a leaked password cannot drain your plan or API credit. One tutor reply is 1 request plus 1 per
       # tool round (at most 6). Whole numbers; 0 means no cap.
       - AI_MAX_REQUESTS_PER_HOUR=60
       - AI_MAX_REQUESTS_PER_DAY=300
