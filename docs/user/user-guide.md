@@ -110,7 +110,7 @@ The question format is in the [format guide](question-format.md).
 
 The key stays in `ai-settings.json` in the data folder and is never shown again in the app.
 
-**Login safety.** The container gets only two files from `~/.codex`: `auth.json` (the login) and `models_cache.json` (your model list). Your Codex chat history, settings and other files stay out. Both are read-only; Codex on the host keeps refreshing the login. After `codex logout` and a new login, restart the container (`docker compose restart`).
+**Login safety.** The container mounts `~/.codex` read-write but reads only its `auth.json`. A login made with `one-time-projects/codex-auth-maker` is refreshed by the app; a Codex CLI login is only read, and Codex keeps refreshing it. Without a login, only the ChatGPT connection is off; API-key connections still answer.
 
 **Usage cap.** The whole app may send at most **60 AI requests an hour and 300 a day** (one reply is one request plus one per lookup round, at most 6). This stops a leaked password or a bug from draining your ChatGPT plan or API budget. Past the cap, the tutor tells you when it can answer again. Change the caps with `AI_MAX_REQUESTS_PER_HOUR` and `AI_MAX_REQUESTS_PER_DAY` in `docker-compose.yml` (`0` turns a cap off).
 

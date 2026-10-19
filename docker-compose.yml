@@ -25,4 +25,4 @@ services:
       # make it writable by the user above. A Codex CLI folder (~/.codex) also
       # works, read-only in effect: Codex keeps refreshing it. Without a sign-in
       # only the ChatGPT connection is off; API-key connections still answer.
-      - ${CODEX_AUTH_DIR:-${HOME}/.codex-auth}:/codex
+      - ${CODEX_HOME:-${HOME}/.codex}:/codex

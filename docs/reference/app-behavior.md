@@ -27,7 +27,7 @@ For interface development, run `npm run dev` and `npm run dev:web` in separate t
 | Check | Why | What to change |
 |---|---|---|
 | The left side of each volume line | Those are the folders on your computer | Your `question_bank`, `md_materials` and sign-in folder; leave out the notes or the sign-in folder to run without that feature |
-| A ChatGPT sign-in exists | The folder `${CODEX_AUTH_DIR:-~/.codex-auth}` is mounted read-write at `/codex`; only its `auth.json` is read | Make one with `one-time-projects/codex-auth-maker` (no Codex CLI needed). Without it only the ChatGPT connection is off |
+| A ChatGPT sign-in exists | The folder `${CODEX_HOME:-~/.codex}` is mounted read-write at `/codex`; only its `auth.json` is read | Make one with `one-time-projects/codex-auth-maker` (no Codex CLI needed). Without it only the ChatGPT connection is off |
 | `AI_MAX_REQUESTS_PER_HOUR`, `AI_MAX_REQUESTS_PER_DAY` | Caps how many Codex requests the whole app sends (default 60 an hour, 300 a day), so a leaked password cannot drain your ChatGPT plan | Raise them if the tutor stops you during normal study; `0` turns a cap off |
 | Run `id -u` and `id -g` | The database should belong to you, and the Codex login is readable only by you | If either is not `1000`, change `user:` |
 | `STUDY_PASSWORD` | The container listens beyond the server itself, so the app refuses to start without a password (Compose also refuses to start without it) | Set it in `.env` |
