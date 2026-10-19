@@ -115,13 +115,12 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
     }
     return store.put(libraryId, 'chat', { id: id(), title: String(body.title || 'Ask AI').slice(0, 200), kind: body.questionId ? 'tutor' : 'ask', questionId: body.questionId ?? null, setId: body.setId ?? null, messages: [] });
   });
-  // Delete one conversation, or all of them; a reply still streaming into one is stopped.
-  const deleteChats = (libraryId: string, chatIds?: string[]) => {
+  // Delete conversations; a reply still streaming into one is stopped.
+  const deleteChats = (libraryId: string, chatIds: string[]) => {
     const deleted = store.deleteChats(libraryId, chatIds);
     for (const [runId, chatId] of activeChats) if (deleted.includes(chatId)) active.get(runId)?.abort();
     return { deleted: deleted.length };
   };
-  app.delete(base + '/chats', async (request: any) => deleteChats(request.params.libraryId));
   app.delete(base + '/chats/:id', async (request: any) => deleteChats(request.params.libraryId, [request.params.id]));
   app.get(base + '/chats/:id', async (request: any) => {
     const chat = store.get(request.params.libraryId, request.params.id, 'chat');

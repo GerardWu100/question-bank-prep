@@ -383,6 +383,10 @@ function App() {
     [chapter, setChapter] = useState(""),
     [noteDraft, setNoteDraft] = useState<any>(null),
     [notesView, setNotesView] = useState<"mine" | "ai">("mine"),
+    // History shows "All" or one CHAT_GROUPS label; remembered so a long list stays short.
+    [historyView, setHistoryView] = useState<string>(() =>
+      loadPreference("historyView", "All"),
+    ),
     // Settings → Practice: picking a choice saves it and shows the answer at once.
     [answerOnClick, setAnswerOnClick] = useState(() =>
       loadPreference("answerOnClick", false),
@@ -2346,102 +2350,121 @@ function App() {
               {tutorConversation}
             </>
           )}
-          {library && page === "History" && (
-            <>
-              <div className="page-heading">
-                <h1>Conversation history</h1>
-                {chats.length > 0 && (
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      if (
-                        !window.confirm(
-                          `Delete all ${chats.length} conversations? This cannot be undone.`,
-                        )
-                      )
-                        return;
-                      void run(async () => {
-                        await api(`${scope}/chats`, {}, "DELETE");
-                        setChat(null);
-                        setChats([]);
-                      });
-                    }}
-                  >
-                    Delete all
-                  </button>
-                )}
-              </div>
-              {!chats.length ? (
-                <section className="panel">
-                  <p>No conversations yet.</p>
-                </section>
-              ) : (
-                CHAT_GROUPS.map((group) => {
-                  const inGroup = chats.filter(group.matches);
-                  return (
-                    inGroup.length > 0 && (
-                      <section className="history-group" key={group.label}>
-                        <h2>
-                          {group.label}{" "}
-                          <span className="muted">{inGroup.length}</span>
-                        </h2>
-                        {inGroup.map((c) => (
-                          <div className="history-row" key={c.id}>
-                            <button
-                              className="list-card"
-                              onClick={() =>
-                                void run(async () => {
-                                  if (c.readingPath) {
-                                    // A reading reply must carry its own section, even when opened from History.
-                                    await openReading(
-                                      c.readingPath,
-                                      Number.parseInt(c.readingTitle, 10) - 1,
-                                    );
-                                    setPage("Materials");
-                                    return;
+          {library &&
+            page === "History" &&
+            (() => {
+              // An unknown saved view (a renamed group) falls back to All.
+              const view = CHAT_GROUPS.some((g) => g.label === historyView)
+                ? historyView
+                : "All";
+              const shownGroups = CHAT_GROUPS.filter(
+                (g) => view === "All" || g.label === view,
+              );
+              const shown = chats.filter((c) =>
+                shownGroups.some((g) => g.matches(c)),
+              );
+              return (
+                <>
+                  <h1>Conversation history</h1>
+                  <div className="chips">
+                    {["All", ...CHAT_GROUPS.map((g) => g.label)].map(
+                      (label) => (
+                        <button
+                          key={label}
+                          aria-pressed={view === label}
+                          className={view === label ? "selected" : "secondary"}
+                          onClick={() => {
+                            setHistoryView(label);
+                            savePreference("historyView", label);
+                          }}
+                        >
+                          {label} ·{" "}
+                          {label === "All"
+                            ? chats.length
+                            : chats.filter(
+                                CHAT_GROUPS.find((g) => g.label === label)!
+                                  .matches,
+                              ).length}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  {!shown.length ? (
+                    <section className="panel">
+                      <p>No conversations yet.</p>
+                    </section>
+                  ) : (
+                    shownGroups.map((group) => {
+                      const inGroup = chats.filter(group.matches);
+                      return (
+                        inGroup.length > 0 && (
+                          <section className="history-group" key={group.label}>
+                            {view === "All" && (
+                              <h2>
+                                {group.label}{" "}
+                                <span className="muted">{inGroup.length}</span>
+                              </h2>
+                            )}
+                            {inGroup.map((c) => (
+                              <div className="history-row" key={c.id}>
+                                <button
+                                  className="list-card"
+                                  onClick={() =>
+                                    void run(async () => {
+                                      if (c.readingPath) {
+                                        // A reading reply must carry its own section, even when opened from History.
+                                        await openReading(
+                                          c.readingPath,
+                                          Number.parseInt(c.readingTitle, 10) -
+                                            1,
+                                        );
+                                        setPage("Materials");
+                                        return;
+                                      }
+                                      setChat(await api(chatUrl(c)));
+                                      setPage("Ask AI");
+                                    })
                                   }
-                                  setChat(await api(chatUrl(c)));
-                                  setPage("Ask AI");
-                                })
-                              }
-                            >
-                              <strong>{c.title}</strong>
-                              <span>Read →</span>
-                            </button>
-                            <button
-                              className="quiet small"
-                              aria-label={`Delete ${c.title}`}
-                              disabled={busy}
-                              onClick={() => {
-                                if (
-                                  !window.confirm(
-                                    `Delete "${c.title}"? This cannot be undone.`,
-                                  )
-                                )
-                                  return;
-                                void run(async () => {
-                                  await api(
-                                    `${scope}/chats/${c.id}`,
-                                    {},
-                                    "DELETE",
-                                  );
-                                  if (chat?.id === c.id) setChat(null);
-                                  setChats((await api(`${scope}/chats`)).chats);
-                                });
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        ))}
-                      </section>
-                    )
-                  );
-                })
-              )}
-            </>
-          )}
+                                >
+                                  <strong>{c.title}</strong>
+                                  <span>Read →</span>
+                                </button>
+                                <button
+                                  className="quiet small"
+                                  aria-label={`Delete ${c.title}`}
+                                  disabled={busy}
+                                  onClick={() => {
+                                    if (
+                                      !window.confirm(
+                                        `Delete "${c.title}"? This cannot be undone.`,
+                                      )
+                                    )
+                                      return;
+                                    void run(async () => {
+                                      await api(
+                                        `${scope}/chats/${c.id}`,
+                                        {},
+                                        "DELETE",
+                                      );
+                                      if (chat?.id === c.id) setChat(null);
+                                      setChats(
+                                        (await api(`${scope}/chats`)).chats,
+                                      );
+                                    });
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ))}
+                          </section>
+                        )
+                      );
+                    })
+                  )}
+                </>
+              );
+            })()}
           {page === "Guide" && <Guide />}
           {library && page === "Settings" && (
             <>

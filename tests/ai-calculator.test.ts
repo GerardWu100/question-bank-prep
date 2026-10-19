@@ -76,7 +76,7 @@ describe('durable tutor runs', () => {
       expect(saved.messages[1].content).toBe('Started');
     } finally { await app.close(); }
   });
-  it('deletes a chat while its reply streams, unlinks its saved note, and deletes all chats', async () => {
+  it('deletes a chat while its reply streams, and unlinks the saved note of a deleted chat', async () => {
     const provider = { status: async () => ({ available: true, models: [] }), async *stream(request: any) {
       yield { type: 'text', text: 'Started' };
       if (request.prompt === 'Wait') await new Promise<void>(resolve => request.signal.addEventListener('abort', () => resolve(), { once: true }));
@@ -95,7 +95,7 @@ describe('durable tutor runs', () => {
       await new Promise(resolve => setTimeout(resolve, 20));
       expect((await app.inject(`${base}/chats/${streaming.id}`)).statusCode).toBe(404);
       expect((await app.inject(`${base}/chats`)).json().chats.map((c: any) => c.id)).toEqual([saved.id]);
-      expect((await app.inject({ method: 'DELETE', url: `${base}/chats`, payload: {} })).json()).toEqual({ deleted: 1 });
+      expect((await app.inject({ method: 'DELETE', url: `${base}/chats/${saved.id}`, payload: {} })).json()).toEqual({ deleted: 1 });
       expect((await app.inject(`${base}/chats`)).json().chats).toEqual([]);
       const notes = (await app.inject(`${base}/notes`)).json().notes;
       expect(notes.find((n: any) => n.id === note.id)).toMatchObject({ content: 'Started', chatId: null });

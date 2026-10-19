@@ -353,13 +353,11 @@ export class Store {
   }
   /**
    * Delete tutor conversations and their runs. Saved AI notes stay, but lose their
-   * "Continue this chat" link. `chatIds` undefined deletes every chat in the library.
+   * "Continue this chat" link.
    */
-  deleteChats(libraryId: string, chatIds?: string[]) {
-    if (chatIds) for (const chatId of chatIds) this.get(libraryId, chatId, "chat");
-    const doomed = new Set(
-      chatIds ?? this.list(libraryId, "chat", ["messages"]).map((c) => c.id),
-    );
+  deleteChats(libraryId: string, chatIds: string[]) {
+    for (const chatId of chatIds) this.get(libraryId, chatId, "chat");
+    const doomed = new Set(chatIds);
     this.db.transaction(() => {
       for (const chatId of doomed)
         this.sql(

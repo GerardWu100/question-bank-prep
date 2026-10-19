@@ -18,11 +18,11 @@
   --text-subtle: light-dark(#5f6b67, #9c9a94);
   /* Deep, low-saturation slate teal, so nothing glows: filled buttons, links, the
      active tab. Dark mode fills a deep tone and writes light text on it. */
-  --accent: light-dark(#2d4b46, #2f5852);
-  --accent-hover: light-dark(#223a36, #3a6660);
+  --accent: light-dark(#365750, #37625b);
+  --accent-hover: light-dark(#2b4842, #426e67);
   --on-accent: light-dark(#ffffff, #e6eeec);
-  --accent-text: light-dark(#2f4e48, #7fa39b);
-  --accent-soft: light-dark(#e2e9e6, #22302d);
+  --accent-text: light-dark(#365750, #88aca4);
+  --accent-soft: light-dark(#e3eae7, #24322f);
   --focus: light-dark(#b9721a, #e3a84d);
   /* Answer results: correct, unsure, wrong. Soft variants are backgrounds. */
   --good: light-dark(#3d8748, #62b670);
@@ -242,18 +242,6 @@ p {
   margin: 0 0 0.6rem;
 }
 .practice-heading h1 {
-  margin: 0;
-}
-/* A page title with an action at its right, such as History → Delete all. */
-.page-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  margin-bottom: 0.6rem;
-}
-.page-heading h1 {
   margin: 0;
 }
 .history-group h2 {
