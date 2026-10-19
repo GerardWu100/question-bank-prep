@@ -64,6 +64,8 @@ const base = '/api/libraries/:libraryId';
 /** Register durable study conversations and bounded, library-scoped tutor tools. */
 export function registerAIRoutes(app: FastifyInstance, store: Store, options: { provider?: StudyProvider; calculator?: (request: any) => Promise<any>; readingRoot?: string }) {
   const active = new Map<string, AbortController>();
+  // Run ID → chat ID of each streaming reply, so deleting a chat can stop its reply.
+  const activeChats = new Map<string, string>();
   const work = new Set<Promise<void>>();
   const visibleChat = (libraryId: string, chat: any, setId?: string) => {
     if (!chat.questionId || !setId) return chat;
@@ -113,6 +115,14 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
     }
     return store.put(libraryId, 'chat', { id: id(), title: String(body.title || 'Ask AI').slice(0, 200), kind: body.questionId ? 'tutor' : 'ask', questionId: body.questionId ?? null, setId: body.setId ?? null, messages: [] });
   });
+  // Delete one conversation, or all of them; a reply still streaming into one is stopped.
+  const deleteChats = (libraryId: string, chatIds?: string[]) => {
+    const deleted = store.deleteChats(libraryId, chatIds);
+    for (const [runId, chatId] of activeChats) if (deleted.includes(chatId)) active.get(runId)?.abort();
+    return { deleted: deleted.length };
+  };
+  app.delete(base + '/chats', async (request: any) => deleteChats(request.params.libraryId));
+  app.delete(base + '/chats/:id', async (request: any) => deleteChats(request.params.libraryId, [request.params.id]));
   app.get(base + '/chats/:id', async (request: any) => {
     const chat = store.get(request.params.libraryId, request.params.id, 'chat');
     return visibleChat(request.params.libraryId, chat, request.query.setId);
@@ -155,7 +165,7 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
     });
     const existing = store.get(libraryId, run.id, 'run');
     if (existing.started || existing.status !== 'running') return { run: existing, chat: visibleChat(libraryId, store.get(libraryId, chat.id, 'chat'), body.setId) };
-    const controller = new AbortController(); active.set(run.id, controller);
+    const controller = new AbortController(); active.set(run.id, controller); activeChats.set(run.id, chat.id);
     store.put(libraryId, 'run', { ...run, started: true });
     const generate = async () => {
       let output = ''; let reasoning = ''; let status = 'failed'; let error: string | undefined; let completed = false;
@@ -217,6 +227,8 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
       };
       // One transaction per save: the chat and run share one disk sync every 200 ms.
       const persist = () => store.db.transaction(() => {
+        // The user may delete the chat while its reply is streaming; nothing is left to save.
+        if (!store.find(libraryId, chat.id)) return;
         const saved = store.get(libraryId, chat.id, 'chat');
         const message = saved.messages.find((message: any) => message.id === run.id);
         Object.assign(message, { content: output, markdown: output, reasoning, status, error, model: run.model, provider: run.provider, sources: [...sources.values()], tools: toolSummaries, policyVersion: 1 });
@@ -241,7 +253,7 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
         if (controller.signal.aborted) { status = 'cancelled'; error = 'Generation stopped.'; }
         else if (!completed && !error) { status = 'interrupted'; error = 'Stream ended without a completed response.'; }
       } catch (failure) { error = failure instanceof Error ? failure.message : 'Generation failed.'; status = controller.signal.aborted ? 'cancelled' : 'failed'; }
-      finally { persist(); active.delete(run.id); }
+      finally { persist(); active.delete(run.id); activeChats.delete(run.id); }
     };
     const task = generate(); work.add(task); void task.finally(() => work.delete(task));
     if (!body.stream) await task;

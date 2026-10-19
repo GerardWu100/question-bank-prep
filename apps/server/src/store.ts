@@ -351,6 +351,31 @@ export class Store {
       this.sql("DELETE FROM search_index WHERE rowid=?").run(rowid);
     })();
   }
+  /**
+   * Delete tutor conversations and their runs. Saved AI notes stay, but lose their
+   * "Continue this chat" link. `chatIds` undefined deletes every chat in the library.
+   */
+  deleteChats(libraryId: string, chatIds?: string[]) {
+    if (chatIds) for (const chatId of chatIds) this.get(libraryId, chatId, "chat");
+    const doomed = new Set(
+      chatIds ?? this.list(libraryId, "chat", ["messages"]).map((c) => c.id),
+    );
+    this.db.transaction(() => {
+      for (const chatId of doomed)
+        this.sql(
+          "DELETE FROM records WHERE id=? AND library_id=? AND kind='chat'",
+        ).run(chatId, libraryId);
+      for (const run of this.list(libraryId, "run"))
+        if (doomed.has(run.chatId))
+          this.sql(
+            "DELETE FROM records WHERE id=? AND library_id=? AND kind='run'",
+          ).run(run.id, libraryId);
+      for (const note of this.list(libraryId, "note"))
+        if (doomed.has(note.chatId))
+          this.putIndexed(libraryId, "note", { ...note, chatId: null });
+    })();
+    return [...doomed];
+  }
   /** Mark a file and its questions removed; responses stay as removed-source history. */
   deactivateFile(libraryId: string, file: any, questions?: any[]) {
     this.putIndexed(libraryId, "file", { ...file, active: false });

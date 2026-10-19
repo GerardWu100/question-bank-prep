@@ -63,6 +63,9 @@ const MIN_SECTION_LINES = 150;
 /** Base font sizes the A−/A+ buttons step through, in px. */
 const FONT_SIZES = [14, 15, 17, 19, 21, 24];
 const DEFAULT_FONT_SIZE = 17;
+/** Reopening a material file retries its saved scroll offset this often, for up to 2 s. */
+const SCROLL_RESTORE_INTERVAL_MS = 100;
+const SCROLL_RESTORE_ATTEMPTS = 20;
 const THEMES = ["system", "light", "dark"] as const;
 /**
  * Line width choices: label -> text column width in em (null = the whole window).
@@ -285,13 +288,38 @@ const sumRows = (rows: any[]) =>
     }),
     { total: 0, done: 0, correct: 0, unsure: 0, wrong: 0, flagged: 0 },
   );
-/** URL hash for a view, so refresh and the browser Back button keep the place. */
-const hashFor = (page: Page, setId?: string) =>
-  `#/${page.toLowerCase().replace(/ /g, "-")}${setId ? `/${setId}` : ""}`;
+/** History groups, in display order: where each tutor conversation was started. */
+const CHAT_GROUPS = [
+  { label: "Materials", matches: (c: any) => Boolean(c.readingPath) },
+  {
+    label: "Practice questions",
+    matches: (c: any) => !c.readingPath && Boolean(c.questionId),
+  },
+  { label: "Ask AI", matches: (c: any) => !c.readingPath && !c.questionId },
+];
+/**
+ * URL hash for a view, so refresh and the browser Back button keep the place.
+ * `detail` is the open set on Practice ("#/practice/<setId>") or the open file and
+ * section on Materials ("#/materials/<URL-encoded path>/<section number from 1>").
+ */
+const hashFor = (page: Page, detail?: string) =>
+  `#/${page.toLowerCase().replace(/ /g, "-")}${detail ? `/${detail}` : ""}`;
+const readingDetail = (path: string, section: number) =>
+  `${encodeURIComponent(path)}/${section + 1}`;
 const parseHash = (hash: string) => {
-  const [slug, setId] = hash.replace(/^#\/?/, "").split("/");
+  const [slug, first, second] = hash.replace(/^#\/?/, "").split("/");
   const page = pages.find((p) => hashFor(p) === `#/${slug}`) ?? "Practice";
-  return { page, setId: page === "Practice" ? setId : undefined };
+  let reading: { path: string; section: number } | undefined;
+  if (page === "Materials" && first)
+    try {
+      reading = {
+        path: decodeURIComponent(first),
+        section: Math.max(0, (Number.parseInt(second, 10) || 1) - 1),
+      };
+    } catch {
+      // A hand-edited, malformed path: show Materials without a file.
+    }
+  return { page, setId: page === "Practice" ? first : undefined, reading };
 };
 const blankCounts = {
   total: 0,
@@ -384,6 +412,8 @@ function App() {
     // The open file, already split; the whole text is not kept a second time.
     [sections, setSections] = useState(() => splitSections("")),
     [readingSection, setReadingSection] = useState(0),
+    // The material file read before the open one, for "↩ Back to".
+    [previousReading, setPreviousReading] = useState<string | null>(null),
     [fontSize, setFontSize] = useState(() =>
       loadPreference("fontSize", DEFAULT_FONT_SIZE),
     ),
@@ -448,8 +478,22 @@ function App() {
       setChat(prior ? await api(`${scope}/chats/${prior.id}`) : null);
     });
   }, [page, readingPath, sectionKey, library]);
-  /** Open a reading file (read-only) at a section and remember the place. */
-  const openReading = async (path: string, section = 0) => {
+  /**
+   * Open a reading file (read-only) and remember the place. Without `section`, the file
+   * opens where it was left this session (else at its first section). Leaving a file
+   * records its section and scroll offset, and makes it the "Back to" file.
+   */
+  const openReading = async (path: string, section?: number) => {
+    const left = readingPlace.current;
+    if (left.path && left.path !== path) {
+      readingSpots.current.set(left.path, {
+        section: left.section,
+        scrollY: window.scrollY,
+      });
+      setPreviousReading(left.path);
+    }
+    const spot = readingSpots.current.get(path);
+    section ??= spot?.section ?? 0;
     const response = await fetch(
       `/api/reading/file?path=${encodeURIComponent(path)}`,
       { credentials: "same-origin" },
@@ -464,7 +508,28 @@ function App() {
     setReadingPath(path);
     setReadingSection(sectionIndex);
     savePreference("reading", { path, section: sectionIndex });
+    if (left.path !== path)
+      pendingScroll.current =
+        spot?.section === sectionIndex ? spot.scrollY : null;
   };
+  useEffect(() => {
+    readingPlace.current = { path: readingPath, section: readingSection };
+    const y = pendingScroll.current;
+    if (y === null) return;
+    pendingScroll.current = null;
+    // Formulas, diagrams and pictures grow the section after it first renders, so retry
+    // until the page is tall enough to reach the saved offset.
+    let attempts = 0;
+    const restore = () => {
+      window.scrollTo({ top: y });
+      if (
+        Math.abs(window.scrollY - y) > 2 &&
+        ++attempts < SCROLL_RESTORE_ATTEMPTS
+      )
+        window.setTimeout(restore, SCROLL_RESTORE_INTERVAL_MS);
+    };
+    requestAnimationFrame(restore);
+  }, [readingPath, readingSection, sections]);
   const showSection = (section: number) => {
     setReadingSection(section);
     savePreference("reading", { path: readingPath, section });
@@ -482,7 +547,15 @@ function App() {
   const latestQuestion = useRef<any>(null),
     queue = useRef(Promise.resolve()),
     routeReady = useRef(false),
-    intent = useRef(0);
+    intent = useRef(0),
+    // The open material file and section, read by handlers that outlive a render (Back).
+    readingPlace = useRef({ path: "", section: 0 }),
+    // Path → where each material file was left this session: { section, scrollY }.
+    readingSpots = useRef(
+      new Map<string, { section: number; scrollY: number }>(),
+    ),
+    // Scroll offset to restore once a reopened file has rendered.
+    pendingScroll = useRef<number | null>(null);
   const scope = `/libraries/${library}`;
   const position = activeSet?.cursor ?? 0;
   // A question chat follows the set being practised; other chats keep their saved set.
@@ -567,9 +640,26 @@ function App() {
   // Each view change becomes a browser history entry; Back/Forward replay them.
   useEffect(() => {
     if (!routeReady.current) return;
-    const next = hashFor(page, page === "Practice" ? activeSet?.id : undefined);
-    if (window.location.hash !== next) window.history.pushState(null, "", next);
-  }, [page, activeSet?.id]);
+    const next = hashFor(
+      page,
+      page === "Practice"
+        ? activeSet?.id
+        : page === "Materials" && readingPath
+          ? readingDetail(readingPath, readingSection)
+          : undefined,
+    );
+    if (window.location.hash === next) return;
+    const shown = parseHash(window.location.hash);
+    // Turning sections in one file replaces the entry, so Back returns to the file read
+    // before instead of stepping through sections. A new file gets its own entry.
+    if (
+      page === "Materials" &&
+      shown.page === "Materials" &&
+      (!shown.reading || shown.reading.path === readingPath)
+    )
+      window.history.replaceState(null, "", next);
+    else window.history.pushState(null, "", next);
+  }, [page, activeSet?.id, readingPath, readingSection]);
   useEffect(() => {
     const onPopState = () => void run(showHash);
     window.addEventListener("popstate", onPopState);
@@ -642,7 +732,7 @@ function App() {
   };
   /** Show the view named in the URL hash: a page, or an open practice set. */
   const showHash = async () => {
-    const { page: target, setId } = parseHash(window.location.hash);
+    const { page: target, setId, reading } = parseHash(window.location.hash);
     if (setId) {
       try {
         await openSet(setId, { keepPosition: true });
@@ -651,6 +741,12 @@ function App() {
         // The set no longer exists; fall back to the practice home.
       }
     }
+    if (reading)
+      try {
+        await openReading(reading.path, reading.section);
+      } catch {
+        // The file was moved or deleted; show Materials without it.
+      }
     setQuestion(null);
     setActiveSet(null);
     setPage(target);
@@ -1767,7 +1863,6 @@ function App() {
           )}
           {library && page === "Materials" && (
             <>
-              <h1>Materials</h1>
               {readingFiles === null ? (
                 <p className="muted">
                   Set READING_ROOT in .env to a folder of Markdown study
@@ -1811,6 +1906,18 @@ function App() {
                   <article className="panel reader-body">
                     {readingPath ? (
                       <>
+                        {previousReading && previousReading !== readingPath && (
+                          <button
+                            className="quiet small reader-return"
+                            disabled={busy}
+                            title="Return to the file you read before, where you left it"
+                            onClick={() =>
+                              void run(() => openReading(previousReading))
+                            }
+                          >
+                            ↩ Back to {readingLabel(previousReading)}
+                          </button>
+                        )}
                         <div className="reader-nav">
                           <button
                             className="secondary"
@@ -2241,36 +2348,97 @@ function App() {
           )}
           {library && page === "History" && (
             <>
-              <h1>Conversation history</h1>
+              <div className="page-heading">
+                <h1>Conversation history</h1>
+                {chats.length > 0 && (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Delete all ${chats.length} conversations? This cannot be undone.`,
+                        )
+                      )
+                        return;
+                      void run(async () => {
+                        await api(`${scope}/chats`, {}, "DELETE");
+                        setChat(null);
+                        setChats([]);
+                      });
+                    }}
+                  >
+                    Delete all
+                  </button>
+                )}
+              </div>
               {!chats.length ? (
                 <section className="panel">
                   <p>No conversations yet.</p>
                 </section>
               ) : (
-                chats.map((c) => (
-                  <button
-                    className="list-card"
-                    key={c.id}
-                    onClick={() =>
-                      void run(async () => {
-                        if (c.readingPath) {
-                          // A reading reply must carry its own section, even when opened from History.
-                          await openReading(
-                            c.readingPath,
-                            Number.parseInt(c.readingTitle, 10) - 1,
-                          );
-                          setPage("Materials");
-                          return;
-                        }
-                        setChat(await api(chatUrl(c)));
-                        setPage("Ask AI");
-                      })
-                    }
-                  >
-                    <strong>{c.title}</strong>
-                    <span>Read →</span>
-                  </button>
-                ))
+                CHAT_GROUPS.map((group) => {
+                  const inGroup = chats.filter(group.matches);
+                  return (
+                    inGroup.length > 0 && (
+                      <section className="history-group" key={group.label}>
+                        <h2>
+                          {group.label}{" "}
+                          <span className="muted">{inGroup.length}</span>
+                        </h2>
+                        {inGroup.map((c) => (
+                          <div className="history-row" key={c.id}>
+                            <button
+                              className="list-card"
+                              onClick={() =>
+                                void run(async () => {
+                                  if (c.readingPath) {
+                                    // A reading reply must carry its own section, even when opened from History.
+                                    await openReading(
+                                      c.readingPath,
+                                      Number.parseInt(c.readingTitle, 10) - 1,
+                                    );
+                                    setPage("Materials");
+                                    return;
+                                  }
+                                  setChat(await api(chatUrl(c)));
+                                  setPage("Ask AI");
+                                })
+                              }
+                            >
+                              <strong>{c.title}</strong>
+                              <span>Read →</span>
+                            </button>
+                            <button
+                              className="quiet small"
+                              aria-label={`Delete ${c.title}`}
+                              disabled={busy}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    `Delete "${c.title}"? This cannot be undone.`,
+                                  )
+                                )
+                                  return;
+                                void run(async () => {
+                                  await api(
+                                    `${scope}/chats/${c.id}`,
+                                    {},
+                                    "DELETE",
+                                  );
+                                  if (chat?.id === c.id) setChat(null);
+                                  setChats((await api(`${scope}/chats`)).chats);
+                                });
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )
+                  );
+                })
               )}
             </>
           )}

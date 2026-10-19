@@ -55,10 +55,10 @@ To update later: `docker compose pull && docker compose up -d`. Your answers, ch
 | Page | What you do there |
 |---|---|
 | **Practice** | Pick a topic and chapter, then **Start**, **Continue** or **Review**. Mark an answer *unsure* if you guessed. **★ Flagged**, **✗ Mistakes** and **? Unsure** at the top review those questions from every source. **Resume last session** goes back to the exact question you left. On a question, Previous and Next stay at the top. |
-| **Materials** | Read your study notes one section at a time. **Ask AI about this section** explains it. **↑ Top** jumps back up. |
+| **Materials** | Read your study notes one section at a time. **Ask AI about this section** explains it. **↑ Top** jumps back up. **↩ Back to …** (or the browser's Back) returns to the file you read before, at the same spot. |
 | **Ask AI** | Free questions to the tutor, and **Review my study**: your weak concepts and the next three chapters to practise. |
 | **Notes** | Your own notes and saved tutor replies, each with **Delete**. The AI notes tab has a chat box; **Continue this chat** reopens the conversation a note came from. |
-| **History** | Every tutor conversation. |
+| **History** | Every tutor conversation, grouped by where it started: Materials, Practice questions, or Ask AI. **Delete** removes one; **Delete all** clears them. Saved AI notes stay. |
 | **Guide** | This guide inside the app, with the three bank-building prompts ready to copy. |
 | **Settings** | Export and **Import study progress**, Display (text size, theme, line width, line spacing), Practice (show the answer on click), AI provider (Codex login or API key), tutor model and thinking level, and folder sync. |
 

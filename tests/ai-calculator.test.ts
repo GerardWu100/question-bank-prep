@@ -76,6 +76,31 @@ describe('durable tutor runs', () => {
       expect(saved.messages[1].content).toBe('Started');
     } finally { await app.close(); }
   });
+  it('deletes a chat while its reply streams, unlinks its saved note, and deletes all chats', async () => {
+    const provider = { status: async () => ({ available: true, models: [] }), async *stream(request: any) {
+      yield { type: 'text', text: 'Started' };
+      if (request.prompt === 'Wait') await new Promise<void>(resolve => request.signal.addEventListener('abort', () => resolve(), { once: true }));
+      yield { type: 'done', model: 'm', provider: 'p' };
+    } };
+    const { app } = await buildApp({ provider });
+    try {
+      const library = (await app.inject({ method: 'POST', url: '/api/libraries', payload: { name: 'Delete test' } })).json();
+      const base = `/api/libraries/${library.id}`;
+      const saved = (await app.inject({ method: 'POST', url: `${base}/chats`, payload: {} })).json();
+      const done = (await app.inject({ method: 'POST', url: `${base}/chats/${saved.id}/messages`, payload: { text: 'Hi', operationId: 'delete-1' } })).json();
+      const note = (await app.inject({ method: 'POST', url: `${base}/chats/${saved.id}/messages/${done.chat.messages[1].id}/save-note`, payload: { operationId: 'delete-note' } })).json();
+      const streaming = (await app.inject({ method: 'POST', url: `${base}/chats`, payload: {} })).json();
+      await app.inject({ method: 'POST', url: `${base}/chats/${streaming.id}/messages`, payload: { text: 'Wait', operationId: 'delete-2', stream: true } });
+      expect((await app.inject({ method: 'DELETE', url: `${base}/chats/${streaming.id}`, payload: {} })).json()).toEqual({ deleted: 1 });
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect((await app.inject(`${base}/chats/${streaming.id}`)).statusCode).toBe(404);
+      expect((await app.inject(`${base}/chats`)).json().chats.map((c: any) => c.id)).toEqual([saved.id]);
+      expect((await app.inject({ method: 'DELETE', url: `${base}/chats`, payload: {} })).json()).toEqual({ deleted: 1 });
+      expect((await app.inject(`${base}/chats`)).json().chats).toEqual([]);
+      const notes = (await app.inject(`${base}/notes`)).json().notes;
+      expect(notes.find((n: any) => n.id === note.id)).toMatchObject({ content: 'Started', chatId: null });
+    } finally { await app.close(); }
+  });
   it('saves the reasoning summary beside the reply and passes the library thinking level', async () => {
     let effort: string | undefined;
     const provider = { status: async () => ({ available: true, models: [] }), async *stream(request: any) {

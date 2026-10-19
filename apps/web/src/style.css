@@ -16,12 +16,13 @@
   --text: light-dark(#1b2826, #f0efec);
   --text-muted: light-dark(#4b5954, #c1c0be);
   --text-subtle: light-dark(#5f6b67, #9c9a94);
-  /* Brand teal: filled buttons, links, the active tab. */
-  --accent: light-dark(#17594e, #6ccdbd);
-  --accent-hover: light-dark(#0f463d, #8bdacc);
-  --on-accent: light-dark(#ffffff, #0b1f1b);
-  --accent-text: light-dark(#14544a, #7fd6c7);
-  --accent-soft: light-dark(#dfede7, #1d3531);
+  /* Deep, low-saturation slate teal, so nothing glows: filled buttons, links, the
+     active tab. Dark mode fills a deep tone and writes light text on it. */
+  --accent: light-dark(#2d4b46, #2f5852);
+  --accent-hover: light-dark(#223a36, #3a6660);
+  --on-accent: light-dark(#ffffff, #e6eeec);
+  --accent-text: light-dark(#2f4e48, #7fa39b);
+  --accent-soft: light-dark(#e2e9e6, #22302d);
   --focus: light-dark(#b9721a, #e3a84d);
   /* Answer results: correct, unsure, wrong. Soft variants are backgrounds. */
   --good: light-dark(#3d8748, #62b670);
@@ -242,6 +243,34 @@ p {
 }
 .practice-heading h1 {
   margin: 0;
+}
+/* A page title with an action at its right, such as History → Delete all. */
+.page-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.6rem;
+}
+.page-heading h1 {
+  margin: 0;
+}
+.history-group h2 {
+  font-size: 1.05rem;
+  margin: 1.2rem 0 0.5rem;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.history-row .list-card {
+  margin-bottom: 0;
+}
+.history-row > .quiet {
+  color: var(--text-muted);
 }
 .practice-actions {
   display: flex;
@@ -872,6 +901,13 @@ pre {
   cursor: pointer;
   font-weight: 600;
   padding: 0.3rem 0;
+}
+.reader-return {
+  margin: 0 0 0.5rem;
+}
+/* File names are plain text; only the open file carries the accent. */
+.reader-files button.quiet {
+  color: var(--text-muted);
 }
 .reader-files button {
   display: block;

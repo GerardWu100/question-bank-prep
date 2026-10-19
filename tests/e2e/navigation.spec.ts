@@ -33,7 +33,7 @@ test("reading history reopens the matching material before a tutor reply", async
   await page.getByRole("button", { name: "History", exact: true }).click();
   await page.getByRole("button", { name: "Saved lesson discussion Read →" }).click();
   await expect(page.getByRole("heading", { name: "Reader lesson" })).toBeVisible();
-  await expect(page).toHaveURL(/#\/materials$/);
+  await expect(page).toHaveURL(/#\/materials\/topic%2Flesson\.md\/1$/);
 
   // Capture the payload without making a real provider request.
   await page.route(`**${scope}/chats/${chat.id}/messages`, (route) =>
@@ -47,6 +47,11 @@ test("reading history reopens the matching material before a tutor reply", async
   const payload = (await sent).postDataJSON();
   expect(payload.material).toContain("This reading lives in a topic folder.");
   expect(payload.material).not.toContain("directly in the configured materials folder");
+
+  // Return to the file read before, with the in-app button.
+  await page.getByRole("button", { name: "↩ Back to overview" }).click();
+  await expect(page.getByRole("heading", { name: "Reader overview" })).toBeVisible();
+  await expect(page).toHaveURL(/#\/materials\/overview\.md\/1$/);
 });
 
 test("arrow keys outside Practice do not move the saved question", async ({ page, request }) => {

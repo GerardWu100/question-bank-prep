@@ -39,7 +39,7 @@ Your answer is remembered everywhere: if you answered a question in one set, eve
 
 ## Materials
 
-Your study notes, one section at a time, with formulas, tables and pictures. The app remembers where you stopped. **Ask AI about this section** under each section asks the tutor about exactly that section; **↑ Top** jumps back up. Notes are read-only here: the app never changes your files.
+Your study notes, one section at a time, with formulas, tables and pictures. The app remembers where you stopped. **Ask AI about this section** under each section asks the tutor about exactly that section; **↑ Top** jumps back up. Open another file, then **↩ Back to …** at the top (or the browser's Back) returns to the file you read before, at the same section and scroll position, so you can switch between two files. Notes are read-only here: the app never changes your files.
 
 ## The AI tutor
 
