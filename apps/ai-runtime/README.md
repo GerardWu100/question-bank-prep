@@ -9,7 +9,7 @@ All share `streamWithTools` (tool rounds, size limits, timeout) and the project-
 
 ## Fallback
 
-The list order is the fallback order. A reply goes to the connection that offers the chosen model. If it fails before any text or reasoning reaches the user (`setup_required`, `provider_error`, `interrupted`, `incomplete`), each other connection with an enabled model answers in turn with its first model. `done` names the model and connection that answered, and the chat saves those. Usage limits, a cancel, the output limit and the tool-step limit are final. When every connection fails, one error lists each connection's reason.
+The list order is the fallback order. A reply goes to the connection that offers the chosen model; when several list it, the highest one with it enabled serves it, and the model menu shows that connection's name and thinking levels (`modelOwners`). If it fails before any text or reasoning reaches the user (`setup_required`, `provider_error`, `interrupted`, `incomplete`), each other connection with an enabled model answers in turn with its first model. `done` names the model and connection that answered, and the chat saves those. Usage limits, a cancel, the output limit and the tool-step limit are final. When every connection fails, one error lists each connection's reason.
 
 ## ChatGPT sign-in
 
@@ -21,8 +21,10 @@ The sign-in is a Codex-format `auth.json`: `CODEX_AUTH_FILE`, else `$CODEX_HOME/
 
 Offered ChatGPT models are the IDs listed on the connection that the pinned pi-ai Codex catalog knows (default `gpt-6.1-sol`, `gpt-6-luna`). Codex's own `models_cache.json` is not read. Every request sends a thinking level (requested, else `medium`, else the lightest the model supports), because the transport turns reasoning off without one, and asks for a reasoning summary, which streams as `thinking` events.
 
+API-key base URLs may be localhost or a private LAN address (local AI servers), never link-local or a metadata name, also when spelled as IPv4-mapped IPv6. Every API-key request goes through `endpointFetch`, which refuses a host name that resolves to such an address and does not follow redirects. A DNS answer that changes between that check and the transport's own lookup is not caught.
+
 Tokens and keys are never returned to the browser, saved to the database or included in error messages.
 
-Replies finish only on the transport's terminal `done` event with a stop reason. Partial text remains marked failed, interrupted or cancelled otherwise. Library tools are server-scoped and bounded to six tool rounds. Hint mode excludes keys, solutions, notes and solved prior conversations from retrieval. The model can independently solve a visible question; this filtering is not a guarantee about model behavior.
+Replies finish only on the transport's terminal `done` event with a stop reason. Partial text remains marked failed, interrupted or cancelled otherwise. Library tools are server-scoped and bounded to six model calls per reply and eight tool runs per call; each call past the eight still gets an error result ("Tool call limit reached"), so the next request pairs every tool call with a result. Hint mode excludes keys, solutions, notes and solved prior conversations from retrieval. The model can independently solve a visible question; this filtering is not a guarantee about model behavior.
 
 Live check 2026-10-18: with an invalid Anthropic key first and the ChatGPT subscription second, the Anthropic request failed and `gpt-6-luna` answered through the fallback. A real refresh of an app-owned sign-in has not been exercised yet.

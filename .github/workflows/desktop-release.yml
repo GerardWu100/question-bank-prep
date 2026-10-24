@@ -1,7 +1,8 @@
 # Build the desktop app (Electron) for Linux, macOS and Windows and attach the installers
 # to a GitHub Release. Pushing git tag v1.2.3 makes release "v1.2.3"; the Docker image
 # workflow publishes the same tag. "Run workflow" builds the installers as downloadable
-# workflow artifacts without making a release.
+# workflow artifacts without making a release. Rerunning a tag's run is safe: it adds
+# only the installers the release lacks.
 #
 # Files per release (x64 = Intel/AMD, arm64 = Apple silicon / ARM):
 #   Linux    Question-Bank-Prep-<version>-linux-<arch>.AppImage and .deb
@@ -76,11 +77,71 @@ jobs:
         with:
           path: installers
           merge-multiple: true
-      - name: Create the release with the installers
+      # Safe to rerun: creates the release when it is missing, otherwise uploads only the
+      # installers it lacks. A published installer is never replaced or deleted.
+      - name: Publish the installers to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" installers/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Question Bank Prep $GITHUB_REF_NAME" \
-            --generate-notes
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          repo="$GITHUB_REPOSITORY"
+
+          # A rerun of an old run must not attach its installers to a tag moved to another commit.
+          tag_commit=$(gh api "repos/$repo/commits/refs/tags/$tag" --jq .sha)
+          if [ "$tag_commit" != "$GITHUB_SHA" ]; then
+            echo "::error::Tag $tag points to $tag_commit, but these installers were built from $GITHUB_SHA."
+            exit 1
+          fi
+
+          # Only HTTP 404 means "no release for this tag yet". Any other failure (token, rate
+          # limit, network) stops here instead of being mistaken for a missing release.
+          # assets: one "name<TAB>state<TAB>sha256:<hex>" line per file already on the release.
+          lookup_error="$RUNNER_TEMP/release-lookup-error.txt"
+          if assets=$(gh api "repos/$repo/releases/tags/$tag" \
+              --jq '.assets[] | [.name, .state, .digest // ""] | @tsv' 2>"$lookup_error"); then
+            release_exists=true
+          elif grep -q "(HTTP 404)" "$lookup_error"; then
+            release_exists=false
+          else
+            cat "$lookup_error" >&2
+            exit 1
+          fi
+
+          if [ "$release_exists" = false ]; then
+            # --verify-tag: never create the tag here; it must be the one pushed.
+            gh release create "$tag" installers/* \
+              --repo "$repo" \
+              --verify-tag \
+              --title "Question Bank Prep $tag" \
+              --generate-notes
+            exit 0
+          fi
+
+          # The release exists (a rerun, or an earlier partial upload). A file with the same
+          # name is kept, not replaced: `gh release upload --clobber` deletes the old file
+          # first, so a failed upload would lose a published installer. Replace one by hand.
+          incomplete=false
+          for file in installers/*; do
+            name=$(basename "$file")
+            existing=$(awk -F '\t' -v name="$name" '$1 == name' <<<"$assets")
+            if [ -z "$existing" ]; then
+              echo "Uploading $name: missing from the release."
+              gh release upload "$tag" "$file" --repo "$repo"
+              continue
+            fi
+            IFS=$'\t' read -r _ state digest <<<"$existing"
+            if [ "$state" != "uploaded" ]; then
+              echo "::error::$name is on the release but its upload never finished (state: $state). Delete that file on the release page, then rerun this job."
+              incomplete=true
+            elif [ -z "$digest" ]; then
+              # Files uploaded before GitHub recorded checksums have none to compare.
+              echo "Kept $name: the release already has a file with this name (no checksum to compare)."
+            elif [ "$digest" = "sha256:$(sha256sum "$file" | cut -d ' ' -f 1)" ]; then
+              echo "Kept $name: the release already has this exact file."
+            else
+              echo "::warning::Kept $name: the release already has a file with this name, and this build differs. It was not replaced."
+            fi
+          done
+          [ "$incomplete" = false ]

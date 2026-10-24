@@ -196,6 +196,9 @@ function splitSections(text: string) {
     text: lines.slice(section.start, section.end).join("\n"),
   }));
 }
+/** Identifies a section's saved tutor chat (its readingTitle): "3. Autocorrelation". */
+const sectionKeyOf = (sections: { title: string }[], index: number) =>
+  `${index + 1}. ${sections[index]?.title ?? ""}`;
 /** "Kaplan/schwesernotes-equity/notes.md" -> "schwesernotes-equity"; else the file name. */
 const readingLabel = (path: string) => {
   const parts = path.split("/");
@@ -329,6 +332,13 @@ const blankCounts = {
   unanswered: 0,
   ungradable: 0,
 };
+/** How many unmatched or ambiguous entries a study-progress import summary names. */
+const IMPORT_SUMMARY_NAMES = 5;
+/** "; 7 not found …: a, b, c, d, e …" for a non-empty list of import entries, else "". */
+const namedEntries = (entries: string[], meaning: string) =>
+  entries.length
+    ? `; ${entries.length} ${meaning}: ${entries.slice(0, IMPORT_SUMMARY_NAMES).join(", ")}${entries.length > IMPORT_SUMMARY_NAMES ? " …" : ""}`
+    : "";
 /** Folder names that never hold a bank: version control and tool state. */
 const SKIPPED_IMPORT_FOLDERS = new Set([".git", "node_modules"]);
 /**
@@ -469,16 +479,19 @@ function App() {
     );
     savePreference("lineSpacing", lineSpacing);
   }, [lineSpacing]);
-  /** Identifies a section's saved tutor chat: "3. Autocorrelation". */
-  const sectionKey = `${readingSection + 1}. ${sections[readingSection]?.title ?? ""}`;
-  // Reopen the saved tutor conversation for the open material section, if any.
+  const sectionKey = sectionKeyOf(sections, readingSection);
+  // Reopen the saved tutor conversation for the open material section, if any. The open
+  // chat wins when it belongs here (a conversation continued from History or Notes).
   useEffect(() => {
     if (page !== "Materials" || !readingPath || !library) return;
+    const belongsHere = (c: any) =>
+      c.readingPath === readingPath && c.readingTitle === sectionKey;
+    const openHere = chat && belongsHere(chat) ? chat.id : null;
     void run(async () => {
-      const prior = (await api(`${scope}/chats`)).chats.find(
-        (c: any) =>
-          c.readingPath === readingPath && c.readingTitle === sectionKey,
-      );
+      const summaries = (await api(`${scope}/chats`)).chats;
+      const prior =
+        summaries.find((c: any) => c.id === openHere) ??
+        summaries.find(belongsHere);
       setChat(prior ? await api(`${scope}/chats/${prior.id}`) : null);
     });
   }, [page, readingPath, sectionKey, library]);
@@ -486,6 +499,8 @@ function App() {
    * Open a reading file (read-only) and remember the place. Without `section`, the file
    * opens where it was left this session (else at its first section). Leaving a file
    * records its section and scroll offset, and makes it the "Back to" file.
+   * Returns the opened section's chat key ("3. Autocorrelation"), which can differ from
+   * the requested section when the file was edited.
    */
   const openReading = async (path: string, section?: number) => {
     const left = readingPlace.current;
@@ -515,6 +530,7 @@ function App() {
     if (left.path !== path)
       pendingScroll.current =
         spot?.section === sectionIndex ? spot.scrollY : null;
+    return sectionKeyOf(split, sectionIndex);
   };
   useEffect(() => {
     readingPlace.current = { path: readingPath, section: readingSection };
@@ -552,6 +568,15 @@ function App() {
     queue = useRef(Promise.resolve()),
     routeReady = useRef(false),
     intent = useRef(0),
+    // Each practice navigation (opening a set, moving in it, closing it, switching
+    // library) takes the next number; a response for an older number is dropped, so a
+    // slow question load cannot replace a newer one.
+    navigationToken = useRef(0),
+    // The newest record of the open set from the server. Cursor writes need its version
+    // even when the navigation that received it was superseded and never shown.
+    latestSet = useRef<any>(null),
+    // Cursor writes run one at a time, so each sends the version the last one returned.
+    cursorWrite = useRef<Promise<unknown>>(Promise.resolve()),
     // The open material file and section, read by handlers that outlive a render (Back).
     readingPlace = useRef({ path: "", section: 0 }),
     // Path → where each material file was left this session: { section, scrollY }.
@@ -577,7 +602,7 @@ function App() {
   const showChatIfOpen = (fresh: any) => {
     if (openChatId.current === fresh.id) setChat(fresh);
   };
-  const run = useCallback(async (action: () => Promise<void>) => {
+  const run = useCallback(async (action: () => Promise<unknown>) => {
     setError("");
     setBusy(true);
     try {
@@ -702,37 +727,73 @@ function App() {
     if (!library) return;
     if (page === "Notes" && (chat?.questionId || chat?.readingPath))
       setChat(null);
-    if (page === "Practice" && question && chat?.questionId !== question.id)
+    if (page !== "Practice") return;
+    const saved = latestSet.current;
+    // A navigation dropped by leaving Practice may still have moved the saved cursor:
+    // show the question the server (and Resume) now points at, with its chat.
+    if (saved && activeSet?.id === saved.id && saved.cursor !== activeSet.cursor) {
+      const token = beginNavigation();
+      void run(() => loadQuestion(saved, saved.cursor, token));
+      return;
+    }
+    if (question && chat?.questionId !== question.id) {
+      const token = navigationToken.current;
+      const questionId = question.id;
       void run(async () => {
         const prior = (await api(`${scope}/chats`)).chats.find(
-          (c: any) => c.questionId === question.id,
+          (c: any) => c.questionId === questionId,
         );
-        setChat(prior ? await api(chatUrl(prior)) : null);
+        const loaded = prior ? await api(chatUrl(prior)) : null;
+        // A strip click while this loaded brings its own chat; keep that one.
+        if (token === navigationToken.current) setChat(loaded);
       });
+    }
   }, [page]);
-  const loadQuestion = async (set: any, index: number) => {
-    const q = await api(
-      `${scope}/questions/${set.questionIds[index]}?setId=${set.id}`,
-    );
+  /** Start a practice navigation; responses for any earlier one are dropped from now on. */
+  const beginNavigation = () => ++navigationToken.current;
+  /** Close the open set (or leave it for another library); pending loads are dropped. */
+  const closeSet = () => {
+    beginNavigation();
+    latestSet.current = null;
+    setQuestion(null);
+    setActiveSet(null);
+  };
+  // Leaving Practice drops a question still loading (its chat would land on the new
+  // page); the question already shown stays for the return.
+  useEffect(() => {
+    if (page !== "Practice") beginNavigation();
+  }, [page]);
+  /**
+   * Show question `index` of `set` with its saved tutor conversation. Everything is
+   * fetched first and applied together, and only while `token` is still the newest
+   * navigation, so the question, set position, answer draft and chat always agree.
+   * Returns whether it was applied.
+   */
+  const loadQuestion = async (set: any, index: number, token: number) => {
+    const questionId = set.questionIds[index];
+    const [q, { chats: summaries }] = await Promise.all([
+      api(`${scope}/questions/${questionId}?setId=${set.id}`),
+      api(`${scope}/chats`),
+    ]);
+    // Reopen this question's saved tutor conversation, if any, below the question.
+    const prior = summaries.find((c: any) => c.questionId === questionId);
+    const priorChat = prior
+      ? await api(
+          `${scope}/chats/${prior.id}?setId=${encodeURIComponent(set.id)}`,
+        )
+      : null;
+    if (token !== navigationToken.current) return false;
     latestQuestion.current = q;
+    setActiveSet(set);
     setQuestion(q);
     setDraft(q.setState.selection || "");
     setConfidence(q.setState.confidence || "sure");
     setSaveStatus("");
-    // Reopen this question's saved tutor conversation, if any, below the question.
-    const prior = (await api(`${scope}/chats`)).chats.find(
-      (c: any) => c.questionId === q.id,
-    );
-    setChat(
-      prior
-        ? await api(
-            `${scope}/chats/${prior.id}?setId=${encodeURIComponent(set.id)}`,
-          )
-        : null,
-    );
+    setChat(priorChat);
     // The set cursor lives on the server; remember only which set this browser last used.
     setLastPracticeSetId(set.id);
     savePreference(`lastPractice:${library}`, set.id);
+    return true;
   };
   /** Show the view named in the URL hash: a page, or an open practice set. */
   const showHash = async () => {
@@ -751,11 +812,11 @@ function App() {
       } catch {
         // The file was moved or deleted; show Materials without it.
       }
-    setQuestion(null);
-    setActiveSet(null);
+    closeSet();
     setPage(target);
   };
   const openSet = async (id: string, { keepPosition = false } = {}) => {
+    const token = beginNavigation();
     let set = await api(`${scope}/sets/${encodeURIComponent(id)}`);
     const firstOpen = set.itemStatuses.indexOf("unanswered");
     if (
@@ -772,9 +833,9 @@ function App() {
         },
         "PATCH",
       );
-    setActiveSet(set);
-    await loadQuestion(set, set.cursor || 0);
-    setPage("Practice");
+    if (token !== navigationToken.current) return;
+    latestSet.current = set;
+    if (await loadQuestion(set, set.cursor || 0, token)) setPage("Practice");
   };
   const resumableSet = overview.sets.find(
     (set: any) => set.id === lastPracticeSetId && set.count > 0,
@@ -834,19 +895,37 @@ function App() {
       });
   };
   const navigate = async (index: number) => {
+    const token = beginNavigation();
+    // Pending answer saves, then the previous cursor write, finish first.
     await queue.current;
-    if (index < 0 || index >= activeSet.questionIds.length) return;
-    const updated = await api(
-      `${scope}/sets/${activeSet.id}`,
+    await cursorWrite.current;
+    // A newer click (or closing the set) won while waiting: skip this cursor write.
+    const set = latestSet.current;
+    if (token !== navigationToken.current || !set) return;
+    if (index < 0 || index >= set.questionIds.length) return;
+    const write = api(
+      `${scope}/sets/${set.id}`,
       {
         cursor: index,
-        expectedVersion: activeSet.version,
+        expectedVersion: set.version,
         operationId: operation(),
       },
       "PATCH",
     );
-    setActiveSet(updated);
-    await loadQuestion(updated, index);
+    cursorWrite.current = write.then(
+      (updated) => {
+        // Versions only grow; another set may have been opened meanwhile.
+        if (
+          latestSet.current?.id === updated.id &&
+          updated.version > latestSet.current.version
+        )
+          latestSet.current = updated;
+      },
+      () => {},
+    );
+    const updated = await write;
+    if (token === navigationToken.current)
+      await loadQuestion(updated, index, token);
   };
   // A stable click handler keeps QuestionStrip memoized; the ref sees the latest navigate.
   const navigateRef = useRef(navigate);
@@ -890,12 +969,12 @@ function App() {
     await refresh();
   };
   /**
-   * Open the practice set for one topic / source / chapter. The deck's set is reused while
-   * it still holds every question (so its place is kept); "mistakes" is always rebuilt.
+   * Open the practice set for one topic / source / chapter, or its Mistakes, Unsure or
+   * Flagged review. The server reopens the deck's earlier set (and its place) only while
+   * it holds exactly the questions the filters select now; otherwise it builds a new one.
    */
   const openDeck = async (
     deck: { topic: string; source?: string; chapter?: string },
-    total: number,
     review: "" | "wrong" | "unsure" | "flagged" = "",
   ) => {
     const filters = {
@@ -908,23 +987,9 @@ function App() {
       // the counts on their buttons, even when a source is switched off.
       sources: review && !deck.topic ? [] : activeSources,
     };
-    const existing =
-      !review &&
-      overview.sets.find(
-        (s: any) =>
-          s.count === total &&
-          s.filters?.topic === filters.topic &&
-          (s.filters?.source ?? "") === filters.source &&
-          (s.filters?.chapter ?? "") === filters.chapter &&
-          JSON.stringify(s.filters?.sources ?? []) ===
-            JSON.stringify(filters.sources) &&
-          !s.filters?.statuses?.length &&
-          !s.filters?.query &&
-          !s.filters?.flagged,
-      );
-    if (existing) return openSet(existing.id);
     const set = await api(`${scope}/sets`, {
       operationId: operation(),
+      reuse: true,
       title: [
         labelOf(deck.topic),
         deck.source && labelOf(deck.source),
@@ -942,17 +1007,11 @@ function App() {
   };
   const createSet = async () => {
     const filters = { statuses, flagged, query, topic, source, chapter };
-    // The same filters reopen their earlier set (and its place) instead of piling up copies.
-    const existing =
-      order === "source" &&
-      overview.sets.find(
-        (s: any) =>
-          s.count === eligibleCount &&
-          JSON.stringify(s.filters) === JSON.stringify(filters),
-      );
-    if (existing) return openSet(existing.id);
+    // The same questions in the same order reopen their earlier set (and its place)
+    // instead of piling up copies; a new shuffle seed usually gives a new order.
     const set = await api(`${scope}/sets`, {
       operationId: operation(),
+      reuse: true,
       title:
         [
           topic && labelOf(topic),
@@ -1061,7 +1120,7 @@ function App() {
           <button
             className={strong ? "" : "secondary"}
             disabled={busy}
-            onClick={() => void run(() => openDeck(deck, summary.total))}
+            onClick={() => void run(() => openDeck(deck))}
           >
             {summary.done === 0
               ? "Start"
@@ -1081,7 +1140,7 @@ function App() {
                   key={review}
                   className="quiet"
                   disabled={busy}
-                  onClick={() => void run(() => openDeck(deck, count, review))}
+                  onClick={() => void run(() => openDeck(deck, review))}
                 >
                   {label} {count}
                 </button>
@@ -1091,11 +1150,46 @@ function App() {
       </div>
     );
   };
+  /** True when a reading chat's own section is not the one open on Materials. */
+  const readingMissing = (current: any) =>
+    Boolean(current?.readingPath) &&
+    (current.readingPath !== readingPath || current.readingTitle !== sectionKey);
+  // The open chat is a reading chat whose section is not loaded: it cannot be continued,
+  // because its material would be another section's text.
+  const chatMaterialMissing = readingMissing(chat);
+  /**
+   * Continue a saved conversation (from History or a saved AI note) where it belongs. A
+   * reading chat first reopens its own file and section on Materials, so the next reply
+   * carries that section's text. When that section is gone (file removed, or edited so
+   * the numbered heading no longer matches), the chat opens on `otherPage` marked as
+   * missing its material. Other chats open on `otherPage`. Returns the page shown.
+   */
+  const continueChat = async (summary: any, otherPage: Page) => {
+    const saved = await api(chatUrl(summary));
+    if (saved.readingPath) {
+      const openedKey = await openReading(
+        saved.readingPath,
+        Number.parseInt(saved.readingTitle, 10) - 1,
+      ).catch(() => null);
+      if (openedKey === saved.readingTitle) {
+        setChat(saved);
+        setPage("Materials");
+        return "Materials";
+      }
+    }
+    setChat(saved);
+    setPage(otherPage);
+    return otherPage;
+  };
   /** Send one message to the tutor in the current place (question, section, or Ask AI). */
   const sendToTutor = (text: string, fresh = false) =>
     run(async () => {
       // fresh: start a new conversation instead of continuing the open one.
       let current = fresh ? null : chat;
+      if (readingMissing(current))
+        throw new Error(
+          `Open "${current.readingTitle}" in ${current.readingPath} on Materials to continue this conversation.`,
+        );
       // Under a practice question or a material section, the conversation belongs there.
       if (!current)
         current = await api(
@@ -1128,7 +1222,8 @@ function App() {
           text,
           model,
           stream: true,
-          // The open section is the tutor's context for a material chat.
+          // The open section is the tutor's context for a material chat; readingMissing
+          // above made sure it is this chat's own section.
           ...(current.readingPath
             ? { material: sections[readingSection]?.text ?? "" }
             : {}),
@@ -1220,6 +1315,15 @@ function App() {
           )}
         </article>
       ))}
+      {/* On Materials a mismatch only lasts until the section's own chat loads. */}
+      {chatMaterialMissing && page !== "Materials" && (
+        <p className="muted" role="note">
+          This conversation is about “{chat.readingTitle}” in{" "}
+          {chat.readingPath}, which is not open (it may have been moved or
+          edited), so the tutor cannot see its text. Start a new conversation
+          from that section on Materials.
+        </p>
+      )}
       <form
         className="composer"
         onSubmit={(e) => {
@@ -1270,7 +1374,7 @@ function App() {
             <button
               type="button"
               className="secondary"
-              disabled={busy}
+              disabled={busy || chatMaterialMissing}
               onClick={() =>
                 void sendToTutor(
                   page === "Practice"
@@ -1282,7 +1386,9 @@ function App() {
               Explain
             </button>
           )}
-          <button disabled={busy || !prompt.trim()}>Send</button>
+          <button disabled={busy || !prompt.trim() || chatMaterialMissing}>
+            Send
+          </button>
           {activeRun && (
             <button
               type="button"
@@ -1309,10 +1415,7 @@ function App() {
             key={p}
             onClick={() => {
               // Practice again while a question is open: back to the topic list.
-              if (p === "Practice" && page === "Practice") {
-                setQuestion(null);
-                setActiveSet(null);
-              }
+              if (p === "Practice" && page === "Practice") closeSet();
               setPage(p);
             }}
           >
@@ -1326,8 +1429,7 @@ function App() {
             onChange={(e) => {
               setLibrary(e.target.value);
               setLastPracticeSetId(null);
-              setQuestion(null);
-              setActiveSet(null);
+              closeSet();
             }}
           >
             {libraries.map((l) => (
@@ -1422,13 +1524,7 @@ function App() {
                       className="secondary"
                       disabled={busy}
                       onClick={() =>
-                        void run(() =>
-                          openDeck(
-                            { topic: "" },
-                            sumRows(overview.catalog ?? []).flagged,
-                            "flagged",
-                          ),
-                        )
+                        void run(() => openDeck({ topic: "" }, "flagged"))
                       }
                     >
                       ★ Flagged {sumRows(overview.catalog ?? []).flagged}
@@ -1447,13 +1543,7 @@ function App() {
                           className="secondary"
                           disabled={busy}
                           onClick={() =>
-                            void run(() =>
-                              openDeck(
-                                { topic: "" },
-                                overview.counts[review],
-                                review,
-                              ),
-                            )
+                            void run(() => openDeck({ topic: "" }, review))
                           }
                         >
                           {label} {overview.counts[review]}
@@ -1856,10 +1946,7 @@ function App() {
               </section>
               <button
                 className="secondary"
-                onClick={() => {
-                  setQuestion(null);
-                  setActiveSet(null);
-                }}
+                onClick={closeSet}
               >
                 ← Back to Practice
               </button>
@@ -2305,12 +2392,16 @@ function App() {
                                 disabled={busy}
                                 onClick={() =>
                                   void run(async () => {
-                                    setChat(
-                                      await api(`${scope}/chats/${n.chatId}`),
-                                    );
-                                    document
-                                      .getElementById("notes-chat")
-                                      ?.scrollIntoView({ behavior: "smooth" });
+                                    // A reading chat continues on its own section in Materials.
+                                    if (
+                                      (await continueChat(
+                                        { id: n.chatId },
+                                        "Notes",
+                                      )) === "Notes"
+                                    )
+                                      document
+                                        .getElementById("notes-chat")
+                                        ?.scrollIntoView({ behavior: "smooth" });
                                   })
                                 }
                               >
@@ -2410,20 +2501,8 @@ function App() {
                                 <button
                                   className="list-card"
                                   onClick={() =>
-                                    void run(async () => {
-                                      if (c.readingPath) {
-                                        // A reading reply must carry its own section, even when opened from History.
-                                        await openReading(
-                                          c.readingPath,
-                                          Number.parseInt(c.readingTitle, 10) -
-                                            1,
-                                        );
-                                        setPage("Materials");
-                                        return;
-                                      }
-                                      setChat(await api(chatUrl(c)));
-                                      setPage("Ask AI");
-                                    })
+                                    // A reading reply must carry its own section, even when opened from History.
+                                    void run(() => continueChat(c, "Ask AI"))
                                   }
                                 >
                                   <strong>{c.title}</strong>
@@ -2504,9 +2583,14 @@ function App() {
                         await refresh();
                         setSaveStatus(
                           `Imported ${result.answers} answers, ${result.annotations} flags or question notes, ${result.notes} notes; ${result.unchanged} already the same` +
-                            (result.unmatched.length
-                              ? `; ${result.unmatched.length} not found in this library (import that bank first): ${result.unmatched.slice(0, 5).join(", ")}${result.unmatched.length > 5 ? " …" : ""}`
-                              : ""),
+                            namedEntries(
+                              result.unmatched,
+                              "not found in this library (import that bank first)",
+                            ) +
+                            namedEntries(
+                              result.ambiguous,
+                              "left unchanged because more than one question matches",
+                            ),
                         );
                       });
                     }}
@@ -2630,13 +2714,16 @@ function App() {
                     ? settings.models
                     : [{ id: model, name: model, enabled: true }]
                   ).map((entry: any) => (
+                    // A disabled model is usually waiting for a key or sign-in;
+                    // the server's reason says which, on hover.
                     <option
                       key={entry.id}
                       value={entry.id}
                       disabled={!entry.enabled}
+                      title={entry.enabled ? undefined : entry.reason}
                     >
                       {entry.name}
-                      {entry.enabled ? "" : " · not supported"}
+                      {entry.enabled ? "" : " · not ready"}
                     </option>
                   ))}
                 </select>

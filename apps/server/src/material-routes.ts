@@ -28,6 +28,21 @@ export function registerMaterialRoutes(
     return root;
   };
   const base = "/api/libraries/:libraryId";
+  /**
+   * Deactivate local files no longer in the folder and mark folder files local. Uploaded
+   * files elsewhere stay as they are. `folderHashes` maps each folder path to its hash.
+   */
+  const followFolderFiles = (lib: string, folderHashes: Map<string, string>) => {
+    // Summaries decide; only a file that changes is read in full and written back.
+    for (const file of store.list(lib, "file", ["content"]))
+      if (file.local && file.active && !folderHashes.has(file.path))
+        store.deactivateFile(lib, store.get(lib, file.id, "file"));
+      else if (folderHashes.has(file.path) && !file.local)
+        store.put(lib, "file", {
+          ...store.get(lib, file.id, "file"),
+          local: true,
+        });
+  };
   /** Commit a configured-folder preview and deactivate local files no longer in the folder. */
   const commitRootPreview = (
     lib: string,
@@ -43,15 +58,7 @@ export function registerMaterialRoutes(
         acceptWarnings,
         identityMappings,
       );
-      // Summaries decide; only a file that changes is read in full and written back.
-      for (const file of store.list(lib, "file", ["content"]))
-        if (file.local && file.active && !previewHashes.has(file.path))
-          store.deactivateFile(lib, store.get(lib, file.id, "file"));
-        else if (previewHashes.has(file.path) && !file.local)
-          store.put(lib, "file", {
-            ...store.get(lib, file.id, "file"),
-            local: true,
-          });
+      followFolderFiles(lib, previewHashes);
       return result;
     })();
   app.get("/api/material-root", async () => ({ configured: Boolean(root) }));
@@ -74,6 +81,19 @@ export function registerMaterialRoutes(
       activeLocal.every((f: any) => fileHashes.get(f.path) === f.hash)
     )
       return { changed: false, issues: [] };
+    // A folder scanned as empty is a removal, not an import: a preview needs at least
+    // one file, so deactivate the local files here, as a commit generation of its own.
+    if (!files.length)
+      return store.db.transaction(() => {
+        followFolderFiles(lib, fileHashes);
+        store.bumpGeneration(lib);
+        return {
+          changed: true,
+          issues: [],
+          importRevision: store.library(lib).generation,
+          questions: store.activeQuestionCount(lib),
+        };
+      })();
     const preview = store.preview(lib, files, { localRoot: true });
     if (!preview.canCommit) return { changed: false, issues: preview.issues };
     const result = commitRootPreview(lib, preview, fileHashes, true);

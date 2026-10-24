@@ -50,25 +50,49 @@ It runs on your ChatGPT subscription and on your own API keys at the same time: 
 
 **Desktop app.** Download the installer from the [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest): `.AppImage` or `.deb` (Linux), `.dmg` (macOS), `.exe` (Windows). Open it, click **Create library**, then pick your folders in **File → Question-bank folder…** and **File → Study-notes folder…**. No password is needed. Already run a server? **File → Connect to a server…** uses its questions and progress instead. The installers are not signed: on macOS right-click → **Open**; on Windows **More info → Run anyway**.
 
-**Server with Docker** (reach it from any device, with a password). Save this as `docker-compose.yml`, put `STUDY_PASSWORD=<a password>` in a `.env` file beside it, and run `docker compose up -d`:
+**Server with Docker** (reach it from any device, with a password). Save this as `docker-compose.yml`:
 
 ```yaml
 services:
   question-bank-prep:
     image: ghcr.io/gerardwu100/question-bank-prep:latest
     restart: unless-stopped
-    user: "1000:1000"                 # your `id -u`:`id -g`
+    user: "${HOST_UID:?}:${HOST_GID:?}"   # your `id -u`:`id -g`, from .env
     ports:
-      - "6848:3000"                   # open http://<server>:6848
+      - "6848:3000"                       # open http://<server>:6848
     environment:
-      - STUDY_PASSWORD=${STUDY_PASSWORD}
+      - STUDY_PASSWORD=${STUDY_PASSWORD:?}
     volumes:
-      - ~/.containers/question-bank-prep:/data            # progress and settings
-      - ~/projects/cfa/question_bank:/question_bank:ro    # question banks
-      - ~/projects/cfa/md_materials:/materials:ro         # study notes
+      - type: bind                        # progress and settings
+        source: ${HOME}/.containers/question-bank-prep
+        target: /data
+        bind:
+          create_host_path: false         # a missing folder is an error, not a root-owned folder
+      - type: bind                        # question banks
+        source: ${HOME}/projects/cfa/question_bank
+        target: /question_bank
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind                        # study notes
+        source: ${HOME}/projects/cfa/md_materials
+        target: /materials
+        read_only: true
+        bind:
+          create_host_path: false
 ```
 
-To use the ChatGPT subscription inside Docker, see the [commented compose file](docker-compose.example.yml). Update with `docker compose pull && docker compose up -d`; your progress lives in `/data` and is kept.
+Then, in the same folder and as yourself (not with `sudo`), create the data folder and the `.env` file, and start:
+
+```sh
+mkdir -p ~/.containers/question-bank-prep
+echo "HOST_UID=$(id -u)" >> .env
+echo "HOST_GID=$(id -g)" >> .env
+echo "STUDY_PASSWORD=<a password>" >> .env
+docker compose up -d
+```
+
+The app runs as your user, so the data folder must belong to you. If it was created by root (for example by an older version of this file), give it back with `sudo chown -R "$(id -u):$(id -g)" ~/.containers/question-bank-prep`; otherwise the app stops at startup and its log (`docker compose logs`) names the folder. To use the ChatGPT subscription inside Docker, see the [commented compose file](docker-compose.example.yml). Update with `docker compose pull && docker compose up -d`; your progress lives in `/data` and is kept.
 
 The [user guide](docs/user/user-guide.md) walks through both, and the app's **Guide** tab explains every page.
 

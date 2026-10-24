@@ -9,27 +9,25 @@ const { existsSync, readFileSync, writeFileSync, mkdirSync } = require("node:fs"
 const { createServer } = require("node:net");
 const { join } = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { isPrivateHost } = require("./private-host.cjs");
 
 const LOOPBACK = "127.0.0.1";
-const SERVER_START_TIMEOUT_MS = 30_000;
-const HEALTH_POLL_MS = 200;
+/** Highest TCP port; a hand-edited `localPort` above it would make listen() throw. */
+const MAX_PORT = 65_535;
 /** How long Connect waits for a server to answer before reporting it unreachable. */
 const SERVER_CHECK_TIMEOUT_MS = 8_000;
 /** Built by `npm run build:desktop`: bundled server, calculator worker and web build. */
 const BUILD_DIRECTORY = join(__dirname, "build");
 /** Link schemes handed to the operating system; others (file:, smb:, custom handlers) can start programs. */
 const EXTERNAL_LINK_PROTOCOLS = ["https:", "http:", "mailto:"];
-/** Hosts a plain-http server address may use: this computer, private networks, single-label and .local names. */
-const PRIVATE_HOST_PATTERN =
-  /^(localhost|127(\.\d{1,3}){3}|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|\[::1\]|[^.]+|.+\.local)$/;
 /** The only permission pages get: the Guide's Copy button writes to the clipboard. */
 const ALLOWED_PERMISSION = "clipboard-sanitized-write";
 const settingsPath = () => join(app.getPath("userData"), "desktop-settings.json");
 
 /**
- * Desktop settings: `{ serverUrl?: string, materialRoot?: string, readingRoot?: string }`.
- * serverUrl (http or https origin) selects server mode; the folders are absolute paths
- * used only in local mode.
+ * Desktop settings: `{ serverUrl?: string, materialRoot?: string, readingRoot?: string,
+ * localPort?: number }`. serverUrl (http or https origin) selects server mode; the folders
+ * are absolute paths used only in local mode; localPort is the local server's loopback port.
  */
 function readSettings() {
   try {
@@ -55,8 +53,33 @@ function freePort() {
   });
 }
 
-async function startServer() {
+/** Whether nothing holds `port` on loopback right now: bind it briefly, then release it. */
+function portIsFree(port) {
+  return new Promise((resolve) => {
+    const probe = createServer();
+    probe.once("error", () => resolve(false));
+    probe.listen(port, LOOPBACK, () => probe.close(() => resolve(true)));
+  });
+}
+
+/**
+ * The local server's port, the same on every launch. The page's origin includes the port,
+ * and the browser keeps theme, selected library and Resume per origin, so a new port would
+ * hide them. The first launch saves a free port; when another program holds the saved
+ * port, a new one is saved instead, and those browser preferences start over once
+ * (progress lives in the database and is kept).
+ */
+async function localPort() {
+  const settings = readSettings();
+  const saved = settings.localPort;
+  if (Number.isInteger(saved) && saved > 0 && saved <= MAX_PORT && (await portIsFree(saved))) return saved;
   const port = await freePort();
+  writeSettings({ ...settings, localPort: port });
+  return port;
+}
+
+async function startServer() {
+  const port = await localPort();
   const settings = readSettings();
   // The server reads its configuration from the environment; values set here win over any .env file.
   Object.assign(process.env, {
@@ -68,19 +91,12 @@ async function startServer() {
     MATERIAL_ROOT: settings.materialRoot && existsSync(settings.materialRoot) ? settings.materialRoot : "",
     READING_ROOT: settings.readingRoot && existsSync(settings.readingRoot) ? settings.readingRoot : "",
   });
+  // The bundle ends with a top-level `await app.listen(...)`, so this import settles only
+  // once our server is listening on the port, and rejects (EADDRINUSE) when the bind fails,
+  // for example if another program took the port after the check above. Only then is the
+  // URL loaded: a health check alone could be answered by another program on that port.
   await import(pathToFileURL(join(BUILD_DIRECTORY, "server.mjs")).href);
-  const url = `http://${LOOPBACK}:${port}`;
-  // The server module starts listening on import; wait until it answers.
-  const deadline = Date.now() + SERVER_START_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      if ((await fetch(`${url}/api/health`)).ok) return url;
-    } catch {
-      /* Not listening yet. */
-    }
-    await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_MS));
-  }
-  throw new Error("The study server did not start.");
+  return `http://${LOOPBACK}:${port}`;
 }
 
 /** Pick a folder for one setting, save it and restart so the server reads it. */
@@ -121,7 +137,7 @@ ipcMain.handle("connect-server", async (_event, address) => {
     if (!["http:", "https:"].includes(url.protocol)) throw new Error();
     origin = url.origin;
     // Plain http sends the password and session in clear text: private networks only.
-    if (url.protocol === "http:" && !PRIVATE_HOST_PATTERN.test(url.hostname))
+    if (url.protocol === "http:" && !isPrivateHost(url.hostname))
       return "Use https:// for a server on the internet; http:// works only on this computer or a home network.";
   } catch {
     return "Enter a full address starting with http:// or https://.";

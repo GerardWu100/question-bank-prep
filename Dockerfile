@@ -24,7 +24,8 @@ COPY . .
 RUN npm run build
 # A container port is not loopback, so the server requires STUDY_PASSWORD at run time.
 # Mount points (see docker-compose.example.yml):
-#   /data            database and backups (writable)
+#   /data            database and backups (writable by the user the container runs as;
+#                    the server stops at startup with the fix named when it is not)
 #   /question_bank   question-bank folder, synced on open (read-only)
 #   /materials       study notes for the Materials page and the tutor (read-only)
 #   /codex           folder holding the ChatGPT sign-in auth.json (read-write, so an

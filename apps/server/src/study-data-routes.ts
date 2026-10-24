@@ -1,22 +1,28 @@
 import type { FastifyInstance } from "fastify";
-import { AppError, id, Store } from "./store.js";
+import { AppError, groupBy, id, Store } from "./store.js";
 import { hash, normalizeConfidence } from "../../../packages/domain/src/index.js";
 
 /** `format` value that marks a study-data file written by this app. */
 export const STUDY_DATA_FORMAT = "question-bank-prep/study-data";
+// Still 1: path, chapter and caseTitle are optional additions that older files lack.
 const STUDY_DATA_VERSION = 1;
 const MAX_NOTE_TITLE = 200;
 
 /**
- * One question's study state in a study-data file. A question is found again by
- * topic + source + question ID (its title without "Question "), which survive a fresh
- * import of the same bank on another device; `fingerprint` (stem and choices) is the
- * fallback when the file moved.
+ * One question's study state in a study-data file. `fingerprint` (case text, stem and
+ * choices) says which content the state belongs to; topic + source + question ID (its
+ * title without "Question ") and, in newer files, path, chapter and case title say where
+ * it sat, which tells apart questions with the same content or number.
  */
 interface QuestionEntry {
   topic: string;
   source: string;
   question: string;
+  /** Full bank path, e.g. "quant/a/drills.md"; undefined in files written before it. */
+  path?: string;
+  /** Chapter and case headings ("" when none); undefined in files written before them. */
+  chapter?: string;
+  caseTitle?: string;
   fingerprint?: string;
   selection: string | null;
   confidence: string | null;
@@ -42,11 +48,78 @@ export interface ImportSummary {
   unchanged: number;
   /** Question IDs the file names that this library does not have (or whose answer no longer fits). */
   unmatched: string[];
+  /** Entries that fit more than one question here, or share one with another entry; left unapplied. */
+  ambiguous: string[];
 }
 
 const questionId = (title: string) => title.replace(/^Question\s+/i, "");
 const questionKey = (topic: string, source: string, question: string) =>
   JSON.stringify([topic, source, question]);
+/** Bank path of a question, looked up by its `fileId` (files read without content). */
+function filePaths(store: Store, libraryId: string) {
+  const pathById = new Map<string, string>(
+    store.list(libraryId, "file", ["content"]).map((file) => [file.id, file.path]),
+  );
+  return (question: any) => pathById.get(question.fileId);
+}
+/** "quant/drills.md / Chapter 1 1": where an entry sat, for the import summary. */
+const entryLabel = (entry: QuestionEntry) =>
+  `${[entry.path ?? `${entry.topic}/${entry.source}`, entry.chapter, entry.caseTitle].filter(Boolean).join(" / ")} ${entry.question}`;
+
+/**
+ * Pair each exported entry with the one question here that it describes.
+ *
+ * Content decides when the entry has a fingerprint: only questions with that fingerprint
+ * qualify, so a same-numbered question with other content never takes the state, and a
+ * unique match wins even after a move or renumbering. When several questions qualify (or
+ * the entry has no fingerprint), the entry's location must pick exactly one: its path
+ * (else topic and source) and question ID, plus chapter and case title when exported.
+ * A question chosen by several entries goes to the one entry at its location, else to none.
+ *
+ * Parameters
+ * ----------
+ * entries : exported entries, in any order; the result does not depend on it.
+ * questions : this library's active questions (full records).
+ * pathOf : bank path of a question, from its `fileId`.
+ *
+ * Returns
+ * -------
+ * matched : entry -> its question; every question appears at most once.
+ * unmatched : entries with no question of their content (or, without a fingerprint, location).
+ * ambiguous : entries left out because the choice was not unique.
+ */
+function matchEntries(entries: QuestionEntry[], questions: any[], pathOf: (question: any) => string | undefined) {
+  const atLocation = (entry: QuestionEntry, q: any) =>
+    (entry.path !== undefined ? pathOf(q) === entry.path : q.topic === entry.topic && q.source === entry.source) &&
+    questionId(q.title) === entry.question &&
+    (entry.chapter === undefined || q.chapter === entry.chapter) &&
+    (entry.caseTitle === undefined || q.caseTitle === entry.caseTitle);
+  const byFingerprint = groupBy(questions, (q) => q.fingerprint);
+  const byKey = groupBy(questions, (q) => questionKey(q.topic, q.source, questionId(q.title)));
+  const matched = new Map<QuestionEntry, any>();
+  const unmatched: QuestionEntry[] = [];
+  const ambiguous: QuestionEntry[] = [];
+  for (const entry of entries) {
+    const candidates = entry.fingerprint
+      ? (byFingerprint.get(entry.fingerprint) ?? [])
+      : (byKey.get(questionKey(entry.topic, entry.source, entry.question)) ?? []).filter((q) => atLocation(entry, q));
+    const chosen = candidates.length > 1 ? candidates.filter((q) => atLocation(entry, q)) : candidates;
+    if (!candidates.length) unmatched.push(entry);
+    else if (chosen.length !== 1) ambiguous.push(entry);
+    else matched.set(entry, chosen[0]);
+  }
+  // Two entries for one question (copies of a question in the export): never both write it.
+  for (const claims of groupBy([...matched], ([, q]) => q.id).values()) {
+    if (claims.length === 1) continue;
+    const atOwnLocation = claims.filter(([entry, q]) => atLocation(entry, q));
+    for (const [entry] of claims)
+      if (atOwnLocation.length !== 1 || atOwnLocation[0][0] !== entry) {
+        matched.delete(entry);
+        ambiguous.push(entry);
+      }
+  }
+  return { matched, unmatched, ambiguous };
+}
 
 /** Turn an uploaded study-data JSON into question and note entries. */
 function parseStudyData(content: string): {
@@ -62,11 +135,16 @@ function parseStudyData(content: string): {
   if (data?.format !== STUDY_DATA_FORMAT || !Array.isArray(data.questions))
     throw new AppError(400, "INVALID_STUDY_DATA", "This JSON is not a study-data export from this app.");
   const text = (value: unknown) => (typeof value === "string" ? value : "");
+  // Absent location fields stay undefined, so they do not narrow a match ("" is "no chapter").
+  const optionalText = (value: unknown) => (typeof value === "string" ? value : undefined);
   return {
     questions: data.questions.map((entry: any) => ({
       topic: text(entry.topic),
       source: text(entry.source),
       question: questionId(text(entry.question)),
+      path: optionalText(entry.path),
+      chapter: optionalText(entry.chapter),
+      caseTitle: optionalText(entry.caseTitle),
       fingerprint: text(entry.fingerprint) || undefined,
       selection: text(entry.selection) || null,
       confidence: text(entry.confidence) || null,
@@ -91,6 +169,7 @@ export function registerStudyDataRoutes(app: FastifyInstance, store: Store) {
   app.get(base + "/export/study-data", async (request: any, reply) => {
     const libraryId = request.params.libraryId as string;
     const library = store.library(libraryId);
+    const pathOf = filePaths(store, libraryId);
     const questions = store
       .list(libraryId, "question", ["caseText", "choices", "solution", "stem"])
       .filter((q) => q.active && (q.state.selection || q.annotation.flagged || q.annotation.note))
@@ -98,6 +177,9 @@ export function registerStudyDataRoutes(app: FastifyInstance, store: Store) {
         topic: q.topic,
         source: q.source,
         question: questionId(q.title),
+        path: pathOf(q),
+        chapter: q.chapter,
+        caseTitle: q.caseTitle,
         fingerprint: q.fingerprint,
         selection: q.state.selection,
         confidence: q.state.confidence,
@@ -131,27 +213,25 @@ export function registerStudyDataRoutes(app: FastifyInstance, store: Store) {
     return store.idempotent(request, () => {
       const library = store.library(libraryId);
       const active = store.list(libraryId, "question").filter((q) => q.active);
-      const byKey = new Map(active.map((q) => [questionKey(q.topic, q.source, questionId(q.title)), q]));
-      // Fingerprint fallback only when exactly one question has it.
-      const byFingerprint = new Map<string, any>();
-      const repeated = new Set<string>();
-      for (const q of active) {
-        if (byFingerprint.has(q.fingerprint)) repeated.add(q.fingerprint);
-        byFingerprint.set(q.fingerprint, q);
-      }
-      const summary: ImportSummary = { answers: 0, annotations: 0, notes: 0, unchanged: 0, unmatched: [] };
       // Answers replay in their original order, so "most recent" sorting stays meaningful.
       const ordered = [...questions].sort(
         (a, b) => (a.answerSequence ?? Infinity) - (b.answerSequence ?? Infinity),
       );
+      const { matched, unmatched, ambiguous } = matchEntries(ordered, active, filePaths(store, libraryId));
+      const summary: ImportSummary = {
+        answers: 0,
+        annotations: 0,
+        notes: 0,
+        unchanged: 0,
+        unmatched: unmatched.map(entryLabel),
+        ambiguous: ambiguous.map(entryLabel),
+      };
       let sequence = library.sequence;
       for (const entry of ordered) {
-        const q =
-          byKey.get(questionKey(entry.topic, entry.source, entry.question)) ??
-          (entry.fingerprint && !repeated.has(entry.fingerprint) ? byFingerprint.get(entry.fingerprint) : undefined);
-        const validSelection = !entry.selection || q?.choices.some((c: any) => c.label === entry.selection);
-        if (!q || !validSelection) {
-          summary.unmatched.push(`${entry.topic}/${entry.source} ${entry.question}`);
+        const q = matched.get(entry);
+        if (!q) continue;
+        if (entry.selection && !q.choices.some((c: any) => c.label === entry.selection)) {
+          summary.unmatched.push(entryLabel(entry));
           continue;
         }
         let changed = false;

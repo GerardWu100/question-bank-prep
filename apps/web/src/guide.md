@@ -62,7 +62,7 @@ Then pick the model in **Settings → AI model**. The app caps AI use at 60 requ
 
 ## Notes
 
-**My notes** are your own Markdown notes (**New note**, **Edit**, **Delete**). **AI notes** are tutor replies you saved; that tab also has a chat box, and **Continue this chat** reopens the conversation a note came from.
+**My notes** are your own Markdown notes (**New note**, **Edit**, **Delete**). **AI notes** are tutor replies you saved; that tab also has a chat box, and **Continue this chat** reopens the conversation a note came from; a note from a material section reopens that section on Materials first.
 
 ## Move your progress to another device
 

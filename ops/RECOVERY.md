@@ -16,6 +16,10 @@ Run `npm run backup -- backup app-data/study.sqlite app-data/backups/2026-10-15.
 
 External materials are separate from the database snapshot. Compare their files with the restored imported snapshots before editing or reimporting. Configure the same existing material root only after that review. No credentials are copied by this procedure.
 
+## Progress imported onto the wrong question
+
+Before the content-checked import matcher, a study-data import could put an answer, flag or note on another question with the same number. The current matcher does not undo such an import, and no automatic repair guesses which state belonged where. Restore a backup taken before that import (see Restore), or import a known-good export into a fresh library holding the same bank; do not reset the database. An identical bank file restored to the folder now reactivates its old question IDs; a file restored before that change got new identities, and its earlier progress stays on the inactive old questions.
+
 ## Interrupted local-file save
 
 The editor checks both the imported hash and current disk bytes. It writes a journal, syncs a temporary file, atomically replaces the source, commits reimport, then removes the journal. There is no recovery screen yet: list unresolved journals with `GET /api/material-recovery`, and resolve one with `POST /api/libraries/<libraryId>/material-recovery/<journalId>`. A matching new hash permits reimport; a matching old hash permits discarding the unfinished journal. A third hash means an external edit and requires manual reconciliation. The journal retains both old and new content. Back up the journal before manual repair.

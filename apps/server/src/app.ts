@@ -45,6 +45,42 @@ const CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
   "frame-ancestors 'none'",
 ].join("; ");
+/** Set filters as text that ignores key order: {"chapter":"","topic":"x"}. */
+const filterKey = (filters: Record<string, unknown>) =>
+  JSON.stringify(
+    Object.entries(filters ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)),
+  );
+/**
+ * The newest saved set whose filters equal `filters` and whose `questionIds` equal
+ * `questionIds` element by element (same members, same order), or undefined.
+ * Only the two compared fields are read; a candidate's items load only on a match.
+ */
+function setWithQuestions(
+  store: Store,
+  libraryId: string,
+  filters: Record<string, unknown>,
+  questionIds: string[],
+) {
+  const wantedFilters = filterKey(filters);
+  // rowid follows creation order (put() updates in place), so DESC is newest first.
+  const candidates = store
+    .sql(
+      "SELECT id, json_extract(data,'$.filters') AS filters, json_extract(data,'$.questionIds') AS questionIds FROM records WHERE library_id=? AND kind='set' AND json_array_length(data,'$.questionIds')=? ORDER BY rowid DESC",
+    )
+    .all(libraryId, questionIds.length) as {
+    id: string;
+    filters: string | null;
+    questionIds: string;
+  }[];
+  const match = candidates.find(
+    (candidate) =>
+      filterKey(JSON.parse(candidate.filters ?? "{}")) === wantedFilters &&
+      (JSON.parse(candidate.questionIds) as string[]).every(
+        (questionId, index) => questionId === questionIds[index],
+      ),
+  );
+  return match && store.get(libraryId, match.id, "set");
+}
 
 export async function buildApp(
   options: {
@@ -445,6 +481,10 @@ export async function buildApp(
   app.post(base + "/sets/preview", async (request: any) => ({
     count: store.select(lib(request), request.body).length,
   }));
+  // `reuse: true` (a fresh Start) reopens the newest set with the same filters and exactly
+  // the questions, in the same order, that the filters select now; otherwise it creates
+  // one. Sets are frozen history, so equal counts are not enough: a bank change or a new
+  // answer can swap members while the size stays the same.
   app.post(base + "/sets", async (request: any) =>
     store.mutation(request, () => {
       const questionIds = store.select(lib(request), request.body);
@@ -454,11 +494,16 @@ export async function buildApp(
           "EMPTY_SET",
           "No questions match these filters.",
         );
+      const filters = request.body.filters ?? {};
+      const reusable =
+        request.body.reuse === true &&
+        setWithQuestions(store, lib(request), filters, questionIds);
+      if (reusable) return reusable;
       return store.put(lib(request), "set", {
         id: id(),
         title: String(request.body.title || "Practice set"),
         questionIds,
-        filters: request.body.filters ?? {},
+        filters,
         seed: request.body.seed ?? "default",
         importRevision: store.library(lib(request)).generation,
         cursor: 0,

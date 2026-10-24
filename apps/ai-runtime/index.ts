@@ -11,6 +11,8 @@ const MAX_REPLY_LENGTH = 100_000;
 /** Model calls one reply may make: the first answer plus up to five tool rounds. */
 const MAX_MODEL_STEPS = 6;
 const MAX_TOOL_CALLS_PER_STEP = 8;
+/** Result sent for each tool call past MAX_TOOL_CALLS_PER_STEP, which is answered but not run. */
+const SKIPPED_TOOL_CALL_RESULT = { error: 'Tool call limit reached; this call was not run.' };
 const TOOL_RESULT_CHARACTERS = 24_000;
 /** Thinking levels pi-ai can send, lowest to highest ("off" is never offered). */
 export const THINKING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -70,9 +72,12 @@ export async function* streamWithTools(
           terminal = true;
           if (event.reason === 'toolUse' && request.executeTool) {
             context.messages.push(event.message);
-            for (const toolCall of event.message.content.filter(block => block.type === 'toolCall').slice(0, MAX_TOOL_CALLS_PER_STEP)) {
+            // Every call in the assistant message gets a result, or providers that pair calls
+            // with results reject the next request; calls past the cap are answered, not run.
+            for (const [index, toolCall] of event.message.content.filter(block => block.type === 'toolCall').entries()) {
               let result: unknown; let isError = false;
-              try { result = await request.executeTool(toolCall.name, toolCall.arguments); } catch { result = { error: 'Tool request denied or failed.' }; isError = true; }
+              if (index >= MAX_TOOL_CALLS_PER_STEP) { result = SKIPPED_TOOL_CALL_RESULT; isError = true; }
+              else try { result = await request.executeTool(toolCall.name, toolCall.arguments); } catch { result = { error: 'Tool request denied or failed.' }; isError = true; }
               context.messages.push({ role: 'toolResult', toolCallId: toolCall.id, toolName: toolCall.name, content: [{ type: 'text', text: JSON.stringify(result).slice(0, TOOL_RESULT_CHARACTERS) }], isError, timestamp: Date.now() });
             }
             continueTools = true;

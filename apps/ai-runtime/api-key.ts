@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { lookup } from 'node:dns/promises';
 import { dirname } from 'node:path';
 import type { Model } from '@earendil-works/pi-ai';
 import { streamSimple as anthropicStream } from '@earendil-works/pi-ai/api/anthropic-messages';
@@ -51,8 +52,14 @@ const ASSUMED_CONTEXT_WINDOW = 128_000;
 const ASSUMED_MAX_OUTPUT_TOKENS = 16_384;
 /** Hosts where a local server (Ollama, LM Studio, llama.cpp) may run without a key. */
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
-/** Link-local hosts (169.254.0.0/16, fe80::/10, metadata names), refused as base URLs. */
-const LINK_LOCAL_HOST = /^(169\.254\.\d{1,3}\.\d{1,3}|\[fe[89ab][0-9a-f]:.*\]|metadata(\.google\.internal)?)$/i;
+/**
+ * Link-local addresses (169.254.0.0/16, fe80::/10) and cloud metadata names (Google's,
+ * AWS's IPv6 fd00:ec2::254), without brackets, refused as API destinations.
+ */
+const LINK_LOCAL_ADDRESS = /^(169\.254\.\d{1,3}\.\d{1,3}|fe[89ab][0-9a-f]:.*|metadata(\.google\.internal)?\.?|fd00:ec2::254)$/i;
+/** IPv4-mapped IPv6 (::ffff:a.b.c.d), dotted or as two hex groups, the spelling the URL parser and resolvers give. */
+const IPV4_MAPPED_DOTTED = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i;
+const IPV4_MAPPED_HEX = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i;
 /** Hosts served through Anthropic's Messages API instead of Chat Completions. */
 const ANTHROPIC_HOSTS = ['api.anthropic.com'];
 /** Anthropic API version header for the model list (the Messages transport sets its own). */
@@ -67,6 +74,40 @@ const FALLBACK_CODES = new Set(['setup_required', 'provider_error', 'interrupted
 const hostOf = (baseUrl: string) => { try { return new URL(baseUrl).hostname; } catch { return ''; } };
 const isLocalEndpoint = (baseUrl: string) => LOCAL_HOSTS.includes(hostOf(baseUrl));
 const isAnthropicEndpoint = (baseUrl: string) => ANTHROPIC_HOSTS.includes(hostOf(baseUrl));
+
+/**
+ * Whether a URL host name or resolved address (IPv6 with or without brackets) is link-local
+ * or a metadata name. An IPv4-mapped IPv6 address is classified as its IPv4 address, so
+ * [::ffff:a9fe:a9fe] counts as 169.254.169.254. Loopback and private LAN addresses are not
+ * link-local: local AI servers live there.
+ */
+export function isLinkLocalHost(host: string): boolean {
+  const bare = host.replace(/^\[(.*)\]$/, '$1');
+  // Each hex group of a mapped address holds two IPv4 bytes: 0xa9fe → 169.254.
+  const hex = IPV4_MAPPED_HEX.exec(bare)?.slice(1).map(group => parseInt(group, 16));
+  const address = hex ? hex.flatMap(group => [group >> 8, group & 0xff]).join('.') : IPV4_MAPPED_DOTTED.exec(bare)?.[1] ?? bare;
+  return LINK_LOCAL_ADDRESS.test(address);
+}
+
+/** Every address a host name resolves to (an IP literal resolves to itself). */
+export type HostLookup = (hostname: string) => Promise<string[]>;
+const systemLookup: HostLookup = async hostname => (await lookup(hostname, { all: true })).map(entry => entry.address);
+
+/**
+ * fetch for API connections. The saved-URL check sees only the host's spelling, so this also
+ * refuses a host name that resolves to a link-local address and refuses redirects (an endpoint
+ * could otherwise bounce the request, with its key, to a metadata service). Remaining gap: the
+ * transport resolves the name again, so a DNS answer that changes in between (DNS rebinding)
+ * is not caught.
+ */
+export function endpointFetch(lookupHost: HostLookup = systemLookup): typeof fetch {
+  return async (input, init) => {
+    const { hostname } = new URL(input instanceof Request ? input.url : input);
+    const addresses = await lookupHost(hostname.replace(/^\[(.*)\]$/, '$1'));
+    if ([hostname, ...addresses].some(isLinkLocalHost)) throw new Error('The API endpoint resolves to a link-local address.');
+    return fetch(input, { ...init, redirect: 'error' });
+  };
+}
 /** Name shown for a connection in the model menu and in errors. */
 export const connectionLabel = (connection: Connection) => connection.kind === 'codex' ? 'ChatGPT subscription' : (new URL(connection.baseUrl).host);
 
@@ -120,7 +161,7 @@ export class AISettingsFile {
       try { url = new URL(String(input.baseUrl ?? '').trim()); } catch { throw new Error('Base URL must be a full http(s) address, for example https://openrouter.ai/api/v1.'); }
       if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Base URL must start with http:// or https://.');
       // Cloud metadata services live on link-local addresses and hand out machine credentials.
-      if (LINK_LOCAL_HOST.test(url.hostname)) throw new Error('Base URL cannot be a link-local address.');
+      if (isLinkLocalHost(url.hostname)) throw new Error('Base URL cannot be a link-local address.');
       const baseUrl = url.toString().replace(/\/+$/, '');
       const previous = saved.get(id);
       // A saved key goes only to the address it was saved for; otherwise anyone who can
@@ -190,10 +231,11 @@ export class ApiKeyProvider implements StudyProvider {
     const { apiKey } = this.connection;
     const model = this.model(request.model);
     const effort = status.efforts.find(level => level === request.effort) ?? status.defaultEffort;
+    const guardedFetch = endpointFetch();
     // A local server without a key still needs a non-empty bearer value for the OpenAI client.
     const call: ModelCall = model.api === 'anthropic-messages'
-      ? (context, signal) => anthropicStream(model as Model<'anthropic-messages'>, context, { apiKey, signal, ...(effort ? { reasoning: effort } : {}) })
-      : (context, signal) => completionsStream(model as Model<'openai-completions'>, context, { apiKey: apiKey || 'local', signal });
+      ? (context, signal) => anthropicStream(model as Model<'anthropic-messages'>, context, { apiKey, signal, fetch: guardedFetch, ...(effort ? { reasoning: effort } : {}) })
+      : (context, signal) => completionsStream(model as Model<'openai-completions'>, context, { apiKey: apiKey || 'local', signal, fetch: guardedFetch });
     // Provider errors (rate limits, "model does not support tools", ...) are shown, with the key removed.
     const failureMessage = (detail: string | undefined) => detail
       ? `API request failed: ${(apiKey ? detail.replaceAll(apiKey, '[key]') : detail).slice(0, PROVIDER_ERROR_CHARACTERS)}`
@@ -208,7 +250,7 @@ export class ApiKeyProvider implements StudyProvider {
     const headers: Record<string, string> = anthropic
       ? { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_API_VERSION }
       : apiKey ? { authorization: `Bearer ${apiKey}` } : {};
-    const response = await fetch(`${baseUrl}${anthropic ? '/v1' : ''}/models`, { headers, signal: AbortSignal.timeout(REMOTE_MODELS_TIMEOUT_MS) });
+    const response = await endpointFetch()(`${baseUrl}${anthropic ? '/v1' : ''}/models`, { headers, signal: AbortSignal.timeout(REMOTE_MODELS_TIMEOUT_MS) });
     if (!response.ok) throw new Error(`The endpoint answered ${response.status} for its model list.`);
     const body = await response.json() as { data?: any[] };
     // OpenRouter adds `pricing` (USD per token as strings) and `supported_parameters`; OpenAI and Anthropic list IDs and names.
@@ -226,14 +268,33 @@ export class ApiKeyProvider implements StudyProvider {
 
 /** One configured connection with its provider and current status. */
 interface ConnectionState { connection: Connection; label: string; provider: StudyProvider; status: AccountStatus }
+/** The connection that serves a model ID, and that connection's status for the model. */
+interface ModelOwner { state: ConnectionState; model: ModelStatus }
+
+/**
+ * Who serves each model ID, also one listed on several connections: the first connection,
+ * in fallback order, that offers it enabled; when none does, the first that lists it, whose
+ * entry stays disabled. Keys are in menu order (first listing). The menu and the reply
+ * both use this, so the shown availability, connection and thinking levels are the ones
+ * a reply gets.
+ */
+function modelOwners(states: ConnectionState[]): Map<string, ModelOwner> {
+  const owners = new Map<string, ModelOwner>();
+  for (const state of states) for (const model of state.status.models) {
+    const owner = owners.get(model.id);
+    // Map.set on an existing key keeps its position, so the menu order does not change.
+    if (!owner || (!owner.model.enabled && model.enabled)) owners.set(model.id, { state, model });
+  }
+  return owners;
+}
 
 /**
  * The provider the server uses: every connection in the settings file at once, in
  * fallback order. Reads the file on every call, so a change applies at once.
  *
  * The model menu lists each connection's models (a model ID listed twice is served by the
- * higher connection). A reply goes first to the connection that offers the chosen model;
- * if that fails before any text or reasoning reaches the user, each other ready connection
+ * highest connection that has it enabled; see modelOwners). A reply goes first to the
+ * connection that serves the chosen model; if that fails before any text or reasoning reaches the user, each other ready connection
  * is tried from the top with its first model. The `done` event names the model and
  * connection that actually answered, and the chat saves those.
  */
@@ -261,13 +322,10 @@ export class ConfigurableProvider implements StudyProvider {
 
   async status(): Promise<AccountStatus> {
     const states = await this.states();
-    const seen = new Set<string>();
-    const models: ModelStatus[] = [];
-    for (const { label, status } of states) for (const model of status.models) {
-      if (seen.has(model.id)) continue;
-      seen.add(model.id);
-      models.push({ ...model, name: `${model.name} · ${label}` });
-    }
+    // A disabled entry carries its connection's reason when the model itself has none (a missing key, say).
+    const models: ModelStatus[] = [...modelOwners(states).values()].map(({ state, model }) => ({
+      ...model, name: `${model.name} · ${state.label}`, reason: model.reason ?? (model.enabled ? undefined : state.status.reason),
+    }));
     const ready = states.filter(state => state.status.available);
     const reason = ready.length ? undefined : states.length ? states.map(state => `${state.label}: ${state.status.reason}`).join(' ') : 'Add an AI connection in Settings → AI provider.';
     return { available: ready.length > 0, provider: ready[0]?.status.provider ?? 'none', route: states.map(state => state.label).join(' → '), reason, models };
@@ -277,7 +335,8 @@ export class ConfigurableProvider implements StudyProvider {
 
   async *stream(request: AIRequest): AsyncGenerator<AIEvent> {
     const states = await this.states();
-    const owner = states.find(state => state.status.models.some(model => model.id === request.model && model.enabled));
+    const chosen = modelOwners(states).get(request.model);
+    const owner = chosen?.model.enabled ? chosen.state : undefined;
     // Attempt order: the chosen model on its connection, then every other ready connection from the top with its first model.
     const attempts = [
       ...(owner ? [{ state: owner, model: request.model }] : []),

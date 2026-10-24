@@ -1,5 +1,7 @@
 # The same service as docker-compose.example.yml, built from this checkout
-# instead of pulled. Put STUDY_PASSWORD=<a password> in .env first.
+# instead of pulled. Before the first start, do the steps at the top of
+# docker-compose.example.yml (make the data folder, put HOST_UID, HOST_GID and
+# STUDY_PASSWORD in .env).
 services:
   question-bank-prep:
     build:
@@ -9,16 +11,33 @@ services:
     ports:
       - "127.0.0.1:6848:3000"
     restart: unless-stopped
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    user: "${HOST_UID:?Set HOST_UID=$(id -u) in .env}:${HOST_GID:?Set HOST_GID=$(id -g) in .env}"
     environment:
       - TZ=America/Toronto
       - STUDY_PASSWORD=${STUDY_PASSWORD:?Set STUDY_PASSWORD in .env}
       - AI_MAX_REQUESTS_PER_HOUR=${AI_MAX_REQUESTS_PER_HOUR:-60}
       - AI_MAX_REQUESTS_PER_DAY=${AI_MAX_REQUESTS_PER_DAY:-300}
     volumes:
-      - $HOME/.containers/question-bank-prep:/data
-      - $HOME/projects/cfa/question_bank:/question_bank:ro
-      - $HOME/projects/cfa/md_materials:/materials:ro
+      # Long form so a missing folder is an error, not a new root-owned folder.
+      - type: bind
+        source: ${HOME}/.containers/question-bank-prep
+        target: /data
+        bind:
+          create_host_path: false
+      # Long form too: a missing (unmounted, mistyped) folder would otherwise be
+      # mounted empty, and the folder sync would then remove every bank file.
+      - type: bind
+        source: ${HOME}/projects/cfa/question_bank
+        target: /question_bank
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOME}/projects/cfa/md_materials
+        target: /materials
+        read_only: true
+        bind:
+          create_host_path: false
       # The ChatGPT sign-in folder: only its auth.json is read. Make the file with
       # one-time-projects/codex-auth-maker (no Codex CLI needed); the app then
       # refreshes it and keeps a lock folder beside it, so mount it read-write and

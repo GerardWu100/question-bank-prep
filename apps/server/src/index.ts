@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import staticFiles from "@fastify/static";
 import { buildApp, LOOPBACK_HOSTS } from "./app.js";
+import { ensureWritableDataDirectory } from "./data-directory.js";
 import { AppError } from "./store.js";
 import { defaultCodexAuthFile } from "../../ai-runtime/index.js";
 import { AISettingsFile, ConfigurableProvider } from "../../ai-runtime/api-key.js";
@@ -15,6 +16,8 @@ import { calculate } from "../../calculator/index.js";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 dotenv.config({ path: resolve(root, ".env"), quiet: true });
 const dataDirectory = resolve(root, process.env.STUDY_DATA_DIR || "app-data");
+// Fail at startup with the folder and the fix named, not later inside SQLite.
+ensureWritableDataDirectory(dataDirectory);
 /** A folder setting, resolved from the project root; unset or missing means "not configured". */
 const optionalFolder = (name: "MATERIAL_ROOT" | "READING_ROOT") => {
   const value = process.env[name];
@@ -85,4 +88,6 @@ if (existsSync(webDirectory)) {
 }
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => void app.close());
+// Keep this the module's last top-level await: the desktop wrapper (apps/desktop/main.cjs)
+// imports this module and treats a settled import as "listening", a rejection as a failed bind.
 await app.listen({ host, port });

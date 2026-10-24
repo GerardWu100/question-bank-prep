@@ -103,6 +103,32 @@ function automaticMatch(
     : undefined;
 }
 /**
+ * The removed question an incoming one brings back when its inactive file returns with
+ * identical bytes: the only removed candidate with exactly the same content and heading.
+ * Several (identities left by older revisions or restorations) mean no match, never a merge.
+ */
+function restoredMatch(
+  removed: any[],
+  parsed: any,
+  excluded: (questionId: string) => boolean = () => false,
+) {
+  const same = removed.filter(
+    (q) =>
+      !excluded(q.id) &&
+      CONTENT_FIELDS.every((field) => q[field] === parsed[field]),
+  );
+  return same.length === 1 ? same[0] : undefined;
+}
+/** True when `incoming` is the same bytes and type as `file`, which is removed. */
+const restoresRemovedFile = (file: any, incoming: any) =>
+  Boolean(
+    file &&
+      !file.active &&
+      file.path === incoming.path &&
+      file.hash === incoming.hash &&
+      file.type === incoming.type,
+  );
+/**
  * Large question fields that summaries leave out: the case passage, choices, solution
  * and stem. Lists that only count, filter or sort read questions without them.
  */
@@ -110,7 +136,7 @@ export const QUESTION_TEXT_FIELDS = ["caseText", "choices", "solution", "stem"];
 /** Fields a set summary leaves out: the per-question items and ID list. */
 const SET_ITEM_FIELDS = ["items", "questionIds"];
 /** Group items into lists by a key, keeping input order within each list. */
-function groupBy<T, K>(items: T[], key: (item: T) => K) {
+export function groupBy<T, K>(items: T[], key: (item: T) => K) {
   const groups = new Map<K, T[]>();
   for (const item of items) {
     const group = groups.get(key(item));
@@ -374,12 +400,46 @@ export class Store {
     })();
     return [...doomed];
   }
-  /** Mark a file and its questions removed; responses stay as removed-source history. */
+  /**
+   * Mark a file and its questions removed; responses stay as removed-source history.
+   * `removedQuestionIds` keeps the questions that were active, so restoring the same
+   * bytes brings back exactly those identities (see `restoredMatch`).
+   */
   deactivateFile(libraryId: string, file: any, questions?: any[]) {
-    this.putIndexed(libraryId, "file", { ...file, active: false });
-    for (const question of questions ??
-      this.questionsInFile(libraryId, file.id))
-      this.putIndexed(libraryId, "question", { ...question, active: false });
+    const fileQuestions = questions ?? this.questionsInFile(libraryId, file.id);
+    // Removing an already removed file must not forget its last active membership.
+    const removedQuestionIds = file.active
+      ? fileQuestions.filter((q) => q.active).map((q) => q.id)
+      : file.removedQuestionIds;
+    this.putIndexed(libraryId, "file", {
+      ...file,
+      active: false,
+      removedQuestionIds,
+    });
+    for (const question of fileQuestions)
+      if (question.active)
+        this.putIndexed(libraryId, "question", { ...question, active: false });
+  }
+  /**
+   * Questions a byte-identical re-import of an inactive file may bring back: the file's
+   * inactive questions from its last active membership. A file removed before membership
+   * was recorded offers all its inactive questions; `restoredMatch` then refuses ties.
+   */
+  removedQuestions(libraryId: string, file: any): any[] {
+    const membership = Array.isArray(file.removedQuestionIds)
+      ? new Set<string>(file.removedQuestionIds)
+      : undefined;
+    return this.questionsInFile(libraryId, file.id).filter(
+      (q) => !q.active && (!membership || membership.has(q.id)),
+    );
+  }
+  /** Number of active questions in a library, counted inside SQLite. */
+  activeQuestionCount(libraryId: string): number {
+    return (
+      this.sql(
+        "SELECT COUNT(*) AS count FROM records WHERE library_id=? AND kind='question' AND json_extract(data,'$.active')",
+      ).get(libraryId) as any
+    ).count;
   }
   /** Visible Focus items. Staleness is derived from each link's observed versions. */
   focus(libraryId: string, questions?: Map<string, any>) {
@@ -509,10 +569,10 @@ export class Store {
       "caseText",
       "solution",
     ]).filter((question) => question.active);
-    const fileIdByPath = new Map(
+    const fileByPath = new Map(
       this.list(libraryId, "file", ["content"]).map((file) => [
         file.path,
-        file.id,
+        file,
       ]),
     );
     const activeByFile = groupBy(oldQuestions, (q) => q.fileId);
@@ -530,14 +590,28 @@ export class Store {
       ].sort((a, b) => oldOrder.get(a)! - oldOrder.get(b)!);
     // automatic: the old question each incoming one continues, keyed by question object.
     const automatic = new Map<any, any>();
+    // Tied removed identities of a restored file, offered for review instead of a guess.
+    const removedCandidates = new Map<any, any[]>();
     for (const file of parsed) {
-      const previous = activeByFile.get(fileIdByPath.get(file.path)) ?? [];
+      const existing = fileByPath.get(file.path);
+      // A removed file returning byte for byte brings back its removed questions (as commit does).
+      const removed = restoresRemovedFile(existing, file)
+        ? this.removedQuestions(libraryId, existing)
+        : undefined;
+      const previous = removed ?? activeByFile.get(existing?.id) ?? [];
       for (const question of file.questions) {
-        const match = automaticMatch(previous, question);
+        const match = removed
+          ? restoredMatch(removed, question)
+          : automaticMatch(previous, question);
         if (match) {
           automatic.set(question, match);
           continue;
         }
+        if (removed)
+          removedCandidates.set(
+            question,
+            removed.filter((old) => sameHeading(old, question)),
+          );
         // Same heading but new content: the user decides whether progress carries over.
         if (previous.some((old) => sameHeading(old, question)))
           issues.push({
@@ -564,7 +638,10 @@ export class Store {
         // An automatic match needs no decision, so it carries no candidates to review.
         candidates: (automatic.has(question)
           ? []
-          : reviewCandidates(question)
+          : [
+              ...reviewCandidates(question),
+              ...(removedCandidates.get(question) ?? []),
+            ]
         ).map((old) => ({
           id: old.id,
           title: old.title,
@@ -696,19 +773,23 @@ export class Store {
         )
           continue;
         const fileId = file?.id ?? id();
-        const revision = (file?.version ?? 0) + 1;
+        // A removed file returning with the same bytes reactivates its removed questions
+        // (same IDs, so answers, notes, chats and set links follow); its latest revision
+        // already holds these bytes, so it gets no new one.
+        const restoring = restoresRemovedFile(file, incoming);
+        const revision = restoring ? file.version : (file?.version ?? 0) + 1;
         // Only changed files are read; an unchanged file was skipped above.
-        const previousQuestions = this.questionsInFile(
-          libraryId,
-          fileId,
-        ).filter((q) => q.active);
+        const previousQuestions = restoring
+          ? this.removedQuestions(libraryId, file)
+          : this.questionsInFile(libraryId, fileId).filter((q) => q.active);
+        const matchPrevious = restoring ? restoredMatch : automaticMatch;
         incoming.questions.forEach((parsed: any, position: number) => {
           const explicit = identityMappings[`${incoming.path}:${parsed.line}`];
           const old = explicit
             ? this.get(libraryId, explicit, "question")
             : explicit === null
               ? undefined
-              : automaticMatch(
+              : matchPrevious(
                   previousQuestions,
                   parsed,
                   (questionId) =>
@@ -775,7 +856,7 @@ export class Store {
             });
         });
         for (const old of previousQuestions)
-          if (!claimed.has(old.id))
+          if (old.active && !claimed.has(old.id))
             this.putIndexed(libraryId, "question", { ...old, active: false });
         const nextFile = {
           id: fileId,
@@ -789,21 +870,18 @@ export class Store {
           local: file?.local ?? incoming.local ?? false,
         };
         this.putIndexed(libraryId, "file", nextFile);
-        this.put(libraryId, "fileRevision", {
-          ...nextFile,
-          id: `${fileId}:${revision}`,
-          fileId,
-        });
+        if (!restoring)
+          this.put(libraryId, "fileRevision", {
+            ...nextFile,
+            id: `${fileId}:${revision}`,
+            fileId,
+          });
       }
       for (const set of changedSets) this.put(libraryId, "set", set);
       this.bumpGeneration(libraryId);
       const result = {
         importRevision: library.generation + 1,
-        questions: (
-          this.sql(
-            "SELECT COUNT(*) AS count FROM records WHERE library_id=? AND kind='question' AND json_extract(data,'$.active')",
-          ).get(libraryId) as any
-        ).count,
+        questions: this.activeQuestionCount(libraryId),
       };
       // The new generation makes every other preview stale, and this one is done: keep
       // only what a retry or a stale-preview check reads, not the parsed files.

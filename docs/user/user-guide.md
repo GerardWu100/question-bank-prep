@@ -38,8 +38,8 @@ flowchart LR
 
 1. Make an empty folder. Save [docker-compose.example.yml](../../docker-compose.example.yml) in it as `docker-compose.yml`.
 2. Change the left side of each `volumes` line to your own folders.
-3. Run `id -u` and `id -g`. If either is not `1000`, change `user:` to match.
-4. Make a file named `.env` in the same folder with one line: `STUDY_PASSWORD=<a password>`.
+3. As yourself (not with `sudo`), make the data folder: `mkdir -p ~/.containers/question-bank-prep`. If it is missing, the start stops with "bind source path does not exist".
+4. Make a file named `.env` in the same folder with three lines: `HOST_UID=` followed by the output of `id -u`, `HOST_GID=` followed by the output of `id -g`, and `STUDY_PASSWORD=<a password>`.
 5. Start it:
 
    ```bash

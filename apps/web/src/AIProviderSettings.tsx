@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api, randomId } from "./api";
 
 /** Common endpoints offered as suggestions for an API connection's base URL. */
 const ENDPOINT_PRESETS = [
@@ -115,7 +115,7 @@ export function AIProviderSettings({ onSaved }: { onSaved: () => void }) {
     setDrafts([
       ...drafts,
       {
-        id: crypto.randomUUID(),
+        id: randomId(),
         kind,
         baseUrl: kind === "api" ? DEFAULT_API_BASE_URL : "",
         models: "",

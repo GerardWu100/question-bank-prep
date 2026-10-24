@@ -4,9 +4,16 @@
 # Start:   docker compose up -d
 # Update:  docker compose pull && docker compose up -d
 #
-# A login is required: the container listens beyond the server itself. Put
-#   STUDY_PASSWORD=<a password>
-# in a file named .env next to this docker-compose.yml before the first start.
+# Before the first start, as yourself (not with sudo), in the folder holding
+# this docker-compose.yml:
+#   mkdir -p ~/.containers/question-bank-prep
+#   echo "HOST_UID=$(id -u)" >> .env
+#   echo "HOST_GID=$(id -g)" >> .env
+#   echo "STUDY_PASSWORD=<a password>" >> .env
+# The folder must exist and belong to you: a missing one stops the start with
+# "bind source path does not exist" instead of Docker creating it for root,
+# which the app could not write. A login is required because the container
+# listens beyond the server itself.
 #
 # `docker-compose.yml` in the repository is the same service built from a
 # local checkout instead of pulled.
@@ -24,9 +31,9 @@ services:
       - "6848:3000"
     restart: unless-stopped
     # Run as your own user so the database belongs to you and the ChatGPT
-    # sign-in (mode 600, owned by you) stays readable and refreshable. Change
-    # both if `id -u` and `id -g` on the server do not print 1000.
-    user: "1000:1000"
+    # sign-in (mode 600, owned by you) stays readable and refreshable. HOST_UID
+    # and HOST_GID come from .env (`id -u` and `id -g`, see the top).
+    user: "${HOST_UID:?Set HOST_UID=$(id -u) in .env}:${HOST_GID:?Set HOST_GID=$(id -g) in .env}"
     environment:
       - TZ=America/Toronto
       # Required; read from the .env file next to this compose file.
@@ -44,12 +51,29 @@ services:
     volumes:
       # Folder on your machine, then the path inside the container. Edit the
       # left side to keep files somewhere else; keep the right side as it is.
-      # Database and backups:
-      - $HOME/.containers/question-bank-prep:/data
+      # Database and backups. Long form so a missing folder is an error, not a
+      # new root-owned folder (create it first, see the top):
+      - type: bind
+        source: ${HOME}/.containers/question-bank-prep
+        target: /data
+        bind:
+          create_host_path: false
       # Question banks (one folder per topic); synced every time the app opens:
-      - $HOME/projects/cfa/question_bank:/question_bank:ro
+      # Long form too: a missing (unmounted, mistyped) folder would otherwise be
+      # mounted empty, and the folder sync would then remove every bank file.
+      - type: bind
+        source: ${HOME}/projects/cfa/question_bank
+        target: /question_bank
+        read_only: true
+        bind:
+          create_host_path: false
       # Study notes shown on the Materials page and searched by the tutor:
-      - $HOME/projects/cfa/md_materials:/materials:ro
+      - type: bind
+        source: ${HOME}/projects/cfa/md_materials
+        target: /materials
+        read_only: true
+        bind:
+          create_host_path: false
       # The ChatGPT sign-in folder: only its auth.json is read. Make the file with
       # one-time-projects/codex-auth-maker (no Codex CLI needed); the app then
       # refreshes it and keeps a lock folder beside it, so mount it read-write and

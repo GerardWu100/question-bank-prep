@@ -76,7 +76,18 @@ export async function scanRoot(
       }
     }
   }
-  await visit(root);
+  // A folder that cannot be read is an error, never an empty folder: an empty scan
+  // removes every local file from the library.
+  try {
+    await visit(root);
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(
+      409,
+      "ROOT_UNAVAILABLE",
+      "The configured material folder could not be read.",
+    );
+  }
   return files;
 }
 
