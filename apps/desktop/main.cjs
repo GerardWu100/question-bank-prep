@@ -4,7 +4,7 @@
 //   question-bank and study-notes folders are chosen from the File menu.
 // - Server: shows a hosted Question Bank Prep server (for example the Docker image), so
 //   questions, notes and progress come from it; sign in with the server's password.
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require("electron");
 const { existsSync, readFileSync, writeFileSync, mkdirSync } = require("node:fs");
 const { createServer } = require("node:net");
 const { join } = require("node:path");
@@ -17,6 +17,13 @@ const HEALTH_POLL_MS = 200;
 const SERVER_CHECK_TIMEOUT_MS = 8_000;
 /** Built by `npm run build:desktop`: bundled server, calculator worker and web build. */
 const BUILD_DIRECTORY = join(__dirname, "build");
+/** Link schemes handed to the operating system; others (file:, smb:, custom handlers) can start programs. */
+const EXTERNAL_LINK_PROTOCOLS = ["https:", "http:", "mailto:"];
+/** Hosts a plain-http server address may use: this computer, private networks, single-label and .local names. */
+const PRIVATE_HOST_PATTERN =
+  /^(localhost|127(\.\d{1,3}){3}|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|\[::1\]|[^.]+|.+\.local)$/;
+/** The only permission pages get: the Guide's Copy button writes to the clipboard. */
+const ALLOWED_PERMISSION = "clipboard-sanitized-write";
 const settingsPath = () => join(app.getPath("userData"), "desktop-settings.json");
 
 /**
@@ -113,6 +120,9 @@ ipcMain.handle("connect-server", async (_event, address) => {
     const url = new URL(String(address));
     if (!["http:", "https:"].includes(url.protocol)) throw new Error();
     origin = url.origin;
+    // Plain http sends the password and session in clear text: private networks only.
+    if (url.protocol === "http:" && !PRIVATE_HOST_PATTERN.test(url.hostname))
+      return "Use https:// for a server on the internet; http:// works only on this computer or a home network.";
   } catch {
     return "Enter a full address starting with http:// or https://.";
   }
@@ -197,17 +207,40 @@ else {
         return;
       }
     }
-    // Links to other sites open in the normal browser, not inside the app.
+    // Links to other sites open in the normal browser, not inside the app. Origins are
+    // compared exactly: a prefix test would accept https://app.example.com.evil.net.
+    const appOrigin = new URL(url).origin;
+    const sameOrigin = (target) => {
+      try {
+        return new URL(target).origin === appOrigin;
+      } catch {
+        return false;
+      }
+    };
+    const openOutside = (target) => {
+      try {
+        const link = new URL(target);
+        if (EXTERNAL_LINK_PROTOCOLS.includes(link.protocol)) void shell.openExternal(link.href);
+      } catch {
+        // Not a URL: ignore it.
+      }
+    };
     window.webContents.setWindowOpenHandler(({ url: target }) => {
-      if (!target.startsWith(url)) void shell.openExternal(target);
+      openOutside(target);
       return { action: "deny" };
     });
-    window.webContents.on("will-navigate", (event, target) => {
-      if (!target.startsWith(url)) {
-        event.preventDefault();
-        void shell.openExternal(target);
-      }
-    });
+    const keepInApp = (event, target) => {
+      if (sameOrigin(target)) return;
+      event.preventDefault();
+      openOutside(target);
+    };
+    window.webContents.on("will-navigate", keepInApp);
+    window.webContents.on("will-redirect", keepInApp);
+    // No camera, microphone, location or device access for any page.
+    session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
+      callback(permission === ALLOWED_PERMISSION),
+    );
+    session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === ALLOWED_PERMISSION);
     window.show();
     try {
       await window.loadURL(url);

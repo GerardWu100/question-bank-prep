@@ -124,6 +124,8 @@ let mermaidCount = 0;
 /**
  * Draw a ```mermaid block as an SVG diagram. Mermaid loads on first use (it is large) in
  * strict security mode, which sanitizes labels; a diagram that fails to parse stays as code.
+ * Strict mode also runs DOMPurify over the finished SVG; the server's Content-Security-
+ * Policy (no inline scripts) backs it up, since diagrams come from notes and AI replies.
  */
 function MermaidDiagram({ code }: { code: string }) {
   const [svg, setSvg] = useState("");
@@ -196,6 +198,16 @@ const components: Components = {
   ),
 };
 
+/** decodeURI that keeps a malformed path ("a%E0.png") as written instead of throwing,
+ * which would blank the whole page. */
+function safeDecodeURI(src: string) {
+  try {
+    return decodeURI(src);
+  } catch {
+    return src;
+  }
+}
+
 /** "a/b/../c/./d.png" -> "a/c/d.png" (paths inside the reading folder). */
 function joinReadingPath(directory: string, src: string) {
   const parts: string[] = [];
@@ -233,7 +245,7 @@ export const Markdown = memo(function Markdown({
             img: ({ src, alt }) =>
               typeof src === "string" && !/^[a-z]+:/i.test(src) ? (
                 <img
-                  src={`/api/${route}?path=${encodeURIComponent(joinReadingPath(directory, decodeURI(src)))}`}
+                  src={`/api/${route}?path=${encodeURIComponent(joinReadingPath(directory, safeDecodeURI(src)))}`}
                   alt={alt || ""}
                 />
               ) : (

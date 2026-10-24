@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { AppError } from "./store.js";
 
 /** Image types served from the study folders, by extension. SVG can carry scripts, so
@@ -187,21 +187,64 @@ export async function readReadingLines(
 /** Ripgrep output and run-time limits for one tutor call. */
 const MAX_RG_OUTPUT = 20_000;
 const RG_TIMEOUT_MS = 10_000;
+/** Characters of an rg error message passed back to the tutor. */
+const RG_ERROR_CHARACTERS = 300;
+/**
+ * Ripgrep options the tutor may pass. Everything else is refused: rg has options that
+ * run programs (--pre, --hostname-bin, -z decompressors) or read other files (-f,
+ * --ignore-file, config), and an allow-list cannot miss a new one.
+ * Short flags may be combined ("-ni"); those in RG_SHORT_WITH_VALUE take a value,
+ * attached ("-C2") or as the next argument ("-C", "2").
+ */
+const RG_SHORT_FLAGS = "nNiSswxFlcvoUHIh";
+const RG_SHORT_WITH_VALUE = "eCABmgtTM";
+const RG_LONG_OPTIONS = new Set([
+  "line-number", "no-line-number", "ignore-case", "smart-case", "case-sensitive",
+  "word-regexp", "line-regexp", "fixed-strings", "files-with-matches",
+  "files-without-match", "count", "count-matches", "invert-match", "only-matching",
+  "heading", "no-heading", "with-filename", "no-filename", "files", "type-list",
+  "multiline", "multiline-dotall", "max-columns-preview", "hidden", "no-ignore",
+  "trim", "vimgrep", "column", "stats", "help", "version",
+]);
+/** Long options that take a value ("--glob x" or "--glob=x"). */
+const RG_LONG_WITH_VALUE = new Set([
+  "context", "after-context", "before-context", "max-count", "glob", "iglob", "type",
+  "type-not", "max-columns", "sort", "sortr", "regexp", "max-depth", "max-filesize",
+]);
+const RG_SHORT_OPTION = new RegExp(
+  "^-[" + RG_SHORT_FLAGS + "]*([" + RG_SHORT_WITH_VALUE + "].*)?$",
+);
+/** Short flags ending in a value option with nothing attached ("-C", "-nC"). */
+const RG_SHORT_NEEDS_NEXT = new RegExp(
+  "^-[" + RG_SHORT_FLAGS + "]*[" + RG_SHORT_WITH_VALUE + "]$",
+);
+
+/** True when one rg argument is an allowed option, or not an option at all. */
+function allowedRipgrepOption(arg: string) {
+  if (!arg.startsWith("-") || arg === "--") return true;
+  if (!arg.startsWith("--")) return RG_SHORT_OPTION.test(arg);
+  const name = arg.slice(2).split("=")[0];
+  return RG_LONG_OPTIONS.has(name) || RG_LONG_WITH_VALUE.has(name);
+}
 
 /**
  * Run ripgrep in the notes folder for the tutor (Codex models know rg well).
  * No shell: arguments go straight to rg with the notes folder as the working directory.
- * Refused: options that run other programs (--pre*, -z/--search-zip decompressors),
- * config files, absolute paths and
- * "..", so rg only reads inside the folder. Output is cut to MAX_RG_OUTPUT characters.
+ * Only the options listed above pass; absolute paths and ".." are refused, so rg reads
+ * only inside the folder and never starts another program. Output is cut to
+ * MAX_RG_OUTPUT characters.
  * Returns { output, truncated } or throws when rg is missing or an argument is refused.
  */
 export async function runRipgrep(root: string, args: string[]) {
-  for (const arg of args)
+  // Read left to right: after "--" every argument is a pattern or path; after "-C" or
+  // "--glob" the next argument is that option's value, which may start with "-".
+  let afterDoubleDash = false;
+  let nextIsValue = false;
+  for (const arg of args) {
+    const isValue: boolean = nextIsValue;
     if (
       typeof arg !== "string" ||
-      /^--(pre|config|ignore-file|search-zip)/.test(arg) ||
-      /^-[a-zA-Z]*z/.test(arg) ||
+      (!isValue && !afterDoubleDash && !allowedRipgrepOption(arg)) ||
       arg.startsWith("/") ||
       arg.split(/[\\/=]/).includes("..")
     )
@@ -210,34 +253,53 @@ export async function runRipgrep(root: string, args: string[]) {
         "INVALID_ARGUMENT",
         `Argument not allowed: ${arg}`,
       );
+    nextIsValue =
+      !isValue &&
+      !afterDoubleDash &&
+      (RG_SHORT_NEEDS_NEXT.test(arg) || RG_LONG_WITH_VALUE.has(arg.slice(2)));
+    if (!isValue && arg === "--") afterDoubleDash = true;
+  }
   const base = await realpath(root);
   return new Promise<{ output: string; truncated: boolean }>(
     (resolvePromise, reject) => {
-      execFile(
-        "rg",
-        ["--no-config", "--no-follow", ...args],
-        {
-          cwd: base,
-          timeout: RG_TIMEOUT_MS,
-          maxBuffer: 10_000_000,
-          env: { PATH: process.env.PATH ?? "" },
-        },
-        (error: any, stdout) => {
-          // Exit code 1 means "no matches", which is a normal answer.
-          if (error && error.code !== 1)
-            return reject(
-              new Error(
-                error.code === "ENOENT"
-                  ? "rg is not installed"
-                  : String(error.message).slice(0, 300),
-              ),
-            );
-          resolvePromise({
-            output: stdout.slice(0, MAX_RG_OUTPUT),
-            truncated: stdout.length > MAX_RG_OUTPUT,
-          });
-        },
-      );
+      // stdin is closed (/dev/null): with a pipe there, rg given no path searches stdin
+      // instead of the folder and waits until the timeout.
+      const child = spawn("rg", ["--no-config", "--no-follow", ...args], {
+        cwd: base,
+        env: { PATH: process.env.PATH ?? "" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => child.kill("SIGKILL"), RG_TIMEOUT_MS);
+      child.stdout.on("data", (chunk) => {
+        // Keep one character past the limit so `truncated` is known; stop reading after.
+        if (stdout.length <= MAX_RG_OUTPUT) stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr = (stderr + chunk).slice(0, RG_ERROR_CHARACTERS);
+      });
+      child.on("error", (error: any) => {
+        clearTimeout(timer);
+        reject(
+          new Error(
+            error.code === "ENOENT"
+              ? "rg is not installed"
+              : String(error.message).slice(0, RG_ERROR_CHARACTERS),
+          ),
+        );
+      });
+      child.on("close", (code, signal) => {
+        clearTimeout(timer);
+        // Exit code 1 means "no matches", which is a normal answer.
+        if (signal) return reject(new Error("rg took too long."));
+        if (code !== 0 && code !== 1)
+          return reject(new Error(stderr.trim() || `rg failed (exit ${code}).`));
+        resolvePromise({
+          output: stdout.slice(0, MAX_RG_OUTPUT),
+          truncated: stdout.length > MAX_RG_OUTPUT,
+        });
+      });
     },
   );
 }

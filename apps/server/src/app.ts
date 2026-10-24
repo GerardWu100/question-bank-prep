@@ -19,6 +19,32 @@ export const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1", "[::1]"];
 const SESSION_MILLISECONDS = 30 * 24 * 60 * 60 * 1000;
 /** Largest request body: a whole question-bank folder uploaded for import fits in one preview. */
 const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
+/** Address ranges whose X-Forwarded-* headers are believed when TRUST_PROXY is on (proxy-addr names). */
+const TRUSTED_PROXY_RANGES = ["loopback", "linklocal", "uniquelocal"];
+/** Requests per client per minute across the whole API. */
+const REQUESTS_PER_MINUTE = 300;
+/** Wrong-or-right password attempts one client may make per LOGIN_WINDOW. */
+const LOGIN_ATTEMPTS = 10;
+const LOGIN_WINDOW = "15 minutes";
+/** HSTS lifetime in seconds (one year), sent only on HTTPS responses. */
+const HSTS_SECONDS = 31_536_000;
+/**
+ * Page policy for the web app: scripts, fonts and data only from this server. Inline
+ * styles stay allowed because KaTeX and Mermaid write style attributes. File routes in
+ * reading-routes.ts set their own stricter sandbox policy, which this does not replace.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
 
 export async function buildApp(
   options: {
@@ -40,7 +66,11 @@ export async function buildApp(
   const app = Fastify({
     logger: options.logger ?? false,
     bodyLimit: MAX_REQUEST_BYTES,
-    trustProxy: options.trustProxy ?? false,
+    // Forwarding headers count only from a proxy on this machine or a private network
+    // (Docker networks included). The client address is then the one the proxy saw; an
+    // internet client reaching the app directly cannot fake its address (and dodge the
+    // login limit) or claim HTTPS.
+    trustProxy: options.trustProxy ? TRUSTED_PROXY_RANGES : false,
   });
   const store = new Store(options.databasePath ?? ":memory:");
   // Sessions live in SQLite (only a hash of each token), so a restart or an image
@@ -80,7 +110,18 @@ export async function buildApp(
     }
   };
   await app.register(cookie);
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(rateLimit, { max: REQUESTS_PER_MINUTE, timeWindow: "1 minute" });
+  // Security headers on every response. Referrer-Policy is same-origin, not no-referrer:
+  // no-referrer makes browsers send "Origin: null", which the origin check would refuse.
+  app.addHook("onSend", async (request, reply) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    reply.header("referrer-policy", "same-origin");
+    if (!reply.hasHeader("content-security-policy"))
+      reply.header("content-security-policy", CONTENT_SECURITY_POLICY);
+    if (request.protocol === "https")
+      reply.header("strict-transport-security", `max-age=${HSTS_SECONDS}`);
+  });
   app.addHook("onClose", async () => {
     store.db.close();
   });
@@ -95,9 +136,13 @@ export async function buildApp(
       },
     }),
   );
+  // Checks follow the matched route, never the raw URL: the router decodes the path, so
+  // "/%61pi/libraries" reaches the /api/libraries handler while failing a raw-URL test.
+  const isApiRoute = (request: any) =>
+    String(request.routeOptions.url ?? "").startsWith("/api/");
   // Route config flags: public (no sign-in) and allowWhenArchived (writes allowed on archived libraries).
   app.addHook("onRequest", async (request) => {
-    if (!request.url.startsWith("/api/")) return;
+    if (!isApiRoute(request)) return;
     if (!options.password && !LOOPBACK_HOSTS.includes(request.hostname))
       throw new AppError(
         403,
@@ -125,7 +170,7 @@ export async function buildApp(
       );
   });
   app.addHook("preValidation", async (request) => {
-    if (!request.url.startsWith("/api/")) return;
+    if (!isApiRoute(request)) return;
     const parameters = request.params as Record<string, string>;
     const config = request.routeOptions.config as {
       allowWhenArchived?: boolean;
@@ -210,7 +255,7 @@ export async function buildApp(
   app.post(
     "/api/session",
     {
-      config: { public: true, rateLimit: { max: 10, timeWindow: "1 minute" } },
+      config: { public: true, rateLimit: { max: LOGIN_ATTEMPTS, timeWindow: LOGIN_WINDOW } },
     },
     async (request: any, reply) => {
       const supplied = hash(String(request.body?.password ?? ""));

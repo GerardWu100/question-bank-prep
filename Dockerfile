@@ -33,5 +33,7 @@ RUN npm run build
 ENV STUDY_HOST=0.0.0.0 STUDY_PORT=3000 STUDY_DATA_DIR=/data \
     MATERIAL_ROOT=/question_bank READING_ROOT=/materials CODEX_AUTH_FILE=/codex/auth.json HOME=/tmp
 EXPOSE 3000
+# Never run as root, even from a bare `docker run`; the compose files pick your own user id.
+USER node
 # node runs the TypeScript server through tsx directly; no npm process wrapper.
 CMD ["node", "--import", "tsx", "apps/server/src/index.ts"]

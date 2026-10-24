@@ -756,7 +756,7 @@ function App() {
     setPage(target);
   };
   const openSet = async (id: string, { keepPosition = false } = {}) => {
-    let set = await api(`${scope}/sets/${id}`);
+    let set = await api(`${scope}/sets/${encodeURIComponent(id)}`);
     const firstOpen = set.itemStatuses.indexOf("unanswered");
     if (
       !keepPosition &&
@@ -764,7 +764,7 @@ function App() {
       firstOpen >= 0
     )
       set = await api(
-        `${scope}/sets/${id}`,
+        `${scope}/sets/${encodeURIComponent(id)}`,
         {
           cursor: firstOpen,
           expectedVersion: set.version,

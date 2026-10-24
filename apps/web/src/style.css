@@ -13,9 +13,9 @@
   --surface-sunken: light-dark(#eceee6, #242423);
   --border: light-dark(#dcdfd5, #2e2e2c);
   --border-strong: light-dark(#bfc7bb, #454542);
-  --text: light-dark(#1b2826, #f0efec);
-  --text-muted: light-dark(#4b5954, #c1c0be);
-  --text-subtle: light-dark(#5f6b67, #9c9a94);
+  --text: light-dark(#2a3634, #dcdbd7);
+  --text-muted: light-dark(#56635e, #b4b3b0);
+  --text-subtle: light-dark(#5f6b67, #939189);
   /* Deep, low-saturation slate teal, so nothing glows: filled buttons, links, the
      active tab. Dark mode fills a deep tone and writes light text on it. */
   --accent: light-dark(#365750, #37625b);
@@ -875,7 +875,7 @@ pre {
 /* Materials reader: file list beside the open section. */
 .reader {
   display: grid;
-  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  grid-template-columns: minmax(10rem, 12.5rem) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }

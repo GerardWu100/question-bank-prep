@@ -51,6 +51,8 @@ const ASSUMED_CONTEXT_WINDOW = 128_000;
 const ASSUMED_MAX_OUTPUT_TOKENS = 16_384;
 /** Hosts where a local server (Ollama, LM Studio, llama.cpp) may run without a key. */
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+/** Link-local hosts (169.254.0.0/16, fe80::/10, metadata names), refused as base URLs. */
+const LINK_LOCAL_HOST = /^(169\.254\.\d{1,3}\.\d{1,3}|\[fe[89ab][0-9a-f]:.*\]|metadata(\.google\.internal)?)$/i;
 /** Hosts served through Anthropic's Messages API instead of Chat Completions. */
 const ANTHROPIC_HOSTS = ['api.anthropic.com'];
 /** Anthropic API version header for the model list (the Messages transport sets its own). */
@@ -117,12 +119,20 @@ export class AISettingsFile {
       let url: URL;
       try { url = new URL(String(input.baseUrl ?? '').trim()); } catch { throw new Error('Base URL must be a full http(s) address, for example https://openrouter.ai/api/v1.'); }
       if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Base URL must start with http:// or https://.');
-      let apiKey = saved.get(id)?.apiKey ?? '';
+      // Cloud metadata services live on link-local addresses and hand out machine credentials.
+      if (LINK_LOCAL_HOST.test(url.hostname)) throw new Error('Base URL cannot be a link-local address.');
+      const baseUrl = url.toString().replace(/\/+$/, '');
+      const previous = saved.get(id);
+      // A saved key goes only to the address it was saved for; otherwise anyone who can
+      // change settings could point the connection at their own server and receive the key.
+      if (input.apiKey === undefined && previous?.apiKey && previous.baseUrl !== baseUrl)
+        throw new Error('Enter the API key again after changing the base URL.');
+      let apiKey = previous?.apiKey ?? '';
       if (input.apiKey !== undefined) {
         apiKey = String(input.apiKey).trim();
         if (apiKey.length > MAX_API_KEY_LENGTH || /\s/.test(apiKey)) throw new Error('API key must be one line without spaces.');
       }
-      return { id, kind: 'api', baseUrl: url.toString().replace(/\/+$/, ''), apiKey, models };
+      return { id, kind: 'api', baseUrl, apiKey, models };
     });
     if (connections.filter(connection => connection.kind === 'codex').length > 1) throw new Error('Add the ChatGPT subscription once.');
     if (new Set(connections.map(connection => connection.id)).size !== connections.length) throw new Error('Connection IDs must be different.');

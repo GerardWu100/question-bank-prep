@@ -18,8 +18,9 @@ services:
     container_name: question-bank-prep
     ports:
       # Open to every device that can reach the server, over plain HTTP.
-      # Fine on a home network; put HTTPS in front before exposing it to the
-      # internet, or use "127.0.0.1:6848:3000" to keep it to the server itself.
+      # Fine on a home network. On the internet, put an HTTPS reverse proxy in
+      # front and let only it reach the app: use "127.0.0.1:6848:3000", or drop
+      # this line when the proxy joins the "single" network below.
       - "6848:3000"
     restart: unless-stopped
     # Run as your own user so the database belongs to you and the ChatGPT
@@ -30,8 +31,10 @@ services:
       - TZ=America/Toronto
       # Required; read from the .env file next to this compose file.
       - STUDY_PASSWORD=${STUDY_PASSWORD:?Set STUDY_PASSWORD in .env next to docker-compose.yml}
-      # Set to true only when a reverse proxy serves this app over HTTPS: the
-      # login cookie is then marked Secure. Keep false when reached directly.
+      # true when a reverse proxy serves this app over HTTPS: the login cookie is
+      # then Secure and the login limit counts each visitor. Headers count only
+      # from a proxy on this machine or a private (Docker) network. Keep false
+      # when the app is reached directly.
       - TRUST_PROXY=false
       # Most AI model requests the whole app may send (all connections, backups
       # included), so a leaked password cannot drain your plan or API credit. One tutor reply is 1 request plus 1 per
