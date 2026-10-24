@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, randomId } from "./api";
 
+/** Anthropic's Messages API; the server picks that transport for this host. */
+const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+/** Models a new Anthropic connection starts with (the first is its backup model). */
+const ANTHROPIC_DEFAULT_MODELS = ["claude-sonnet-5-5", "claude-opus-5-5"];
+/** Every Anthropic API key starts with this, so a pasted one can pick its endpoint. */
+const ANTHROPIC_KEY_PREFIX = "sk-ant-";
 /** Common endpoints offered as suggestions for an API connection's base URL. */
 const ENDPOINT_PRESETS = [
-  { label: "Anthropic", url: "https://api.anthropic.com" },
+  { label: "Anthropic", url: ANTHROPIC_BASE_URL },
   { label: "OpenAI", url: "https://api.openai.com/v1" },
   { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
   { label: "DeepSeek", url: "https://api.deepseek.com/v1" },
@@ -42,8 +48,11 @@ const toDraft = (connection: any): Draft => ({
   saved: true,
 });
 const modelList = (models: string) => models.split(/\s+/).filter(Boolean);
+const isAnthropic = (draft: Draft) =>
+  draft.baseUrl.replace(/\/+$/, "") === ANTHROPIC_BASE_URL;
 const titleOf = (draft: Draft) => {
   if (draft.kind === "codex") return "ChatGPT subscription";
+  if (isAnthropic(draft)) return "Anthropic API key";
   try {
     return `API key · ${new URL(draft.baseUrl).host}`;
   } catch {
@@ -111,14 +120,19 @@ export function AIProviderSettings({ onSaved }: { onSaved: () => void }) {
     [next[index], next[index + step]] = [next[index + step], next[index]];
     setDrafts(next);
   };
-  const add = (kind: Draft["kind"]) =>
+  const add = (kind: Draft["kind"], provider?: "anthropic") =>
     setDrafts([
       ...drafts,
       {
         id: randomId(),
         kind,
-        baseUrl: kind === "api" ? DEFAULT_API_BASE_URL : "",
-        models: "",
+        baseUrl:
+          provider === "anthropic"
+            ? ANTHROPIC_BASE_URL
+            : kind === "api"
+              ? DEFAULT_API_BASE_URL
+              : "",
+        models: provider === "anthropic" ? ANTHROPIC_DEFAULT_MODELS.join("\n") : "",
         apiKey: "",
         removeKey: false,
         apiKeySaved: false,
@@ -167,9 +181,23 @@ export function AIProviderSettings({ onSaved }: { onSaved: () => void }) {
                       ? `Saved key ending …${draft.apiKeyEnding}; type to replace`
                       : "Paste your key"
                   }
-                  onChange={(e) =>
-                    edit(index, { apiKey: e.target.value, removeKey: false })
-                  }
+                  onChange={(e) => {
+                    const apiKey = e.target.value.trim();
+                    // A pasted Anthropic key moves an empty connection to Anthropic's
+                    // endpoint and models, so it works without picking a base URL.
+                    const toAnthropic =
+                      apiKey.startsWith(ANTHROPIC_KEY_PREFIX) && !isAnthropic(draft);
+                    edit(index, {
+                      apiKey,
+                      removeKey: false,
+                      ...(toAnthropic && {
+                        baseUrl: ANTHROPIC_BASE_URL,
+                        ...(!draft.models.trim() && {
+                          models: ANTHROPIC_DEFAULT_MODELS.join("\n"),
+                        }),
+                      }),
+                    });
+                  }}
                 />
               </label>
             </>
@@ -278,8 +306,15 @@ export function AIProviderSettings({ onSaved }: { onSaved: () => void }) {
         ))}
       </datalist>
       <div className="chips">
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => add("api", "anthropic")}
+        >
+          + Anthropic key
+        </button>
         <button className="secondary" disabled={busy} onClick={() => add("api")}>
-          + API key
+          + Other API key
         </button>
         {!drafts.some((d) => d.kind === "codex") && (
           <button

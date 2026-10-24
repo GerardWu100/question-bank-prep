@@ -44,6 +44,37 @@ function tidyInlineHtml() {
   };
   return (tree: any) => visit(tree);
 }
+/** A line that starts with a toggle tag: <details>, <details open>, <summary> or a close. */
+const TOGGLE_LINE = /^[ \t]*<\/?(details|summary)\b/i;
+const TOGGLE_TAGS = /(<details(?:\s+open)?\s*>|<\/details\s*>|<\/?summary\s*>)/i;
+/**
+ * Put each toggle tag on its own line between blank lines, so the parser sees every tag
+ * as a separate HTML node and the Markdown between them as normal Markdown:
+ *   "<details><summary>## Title</summary>"  ->  "<details>", "<summary>", "## Title", "</summary>"
+ * Lines keep their indentation (a toggle inside a list stays in the list). Fenced code and
+ * lines holding backticks (`<details>` written as an example) are left alone.
+ */
+function splitToggleTags(text: string) {
+  let fence = "";
+  return text
+    .split("\n")
+    .flatMap((line) => {
+      const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
+      if (marker && !fence) fence = marker;
+      else if (marker && marker[0] === fence[0] && marker.length >= fence.length)
+        fence = "";
+      else if (!fence && TOGGLE_LINE.test(line) && !line.includes("`")) {
+        const indent = /^[ \t]*/.exec(line)![0];
+        return line
+          .split(TOGGLE_TAGS)
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .flatMap((part) => ["", indent + part, ""]);
+      }
+      return [line];
+    })
+    .join("\n");
+}
 /**
  * A "$$" fence pair must share its indentation. When the opening fence is indented deeper
  * than its closing fence (a list item whose formula was pasted flush left), move the
@@ -76,7 +107,7 @@ function alignFenceIndents(text: string) {
  */
 function prepareMarkdown(text: string) {
   return (
-    alignFenceIndents(text)
+    alignFenceIndents(splitToggleTags(text))
       // \[ … \] and \( … \) (common in AI replies) become $$ … $$ and $ … $.
       .replace(
         /\\\[([\s\S]+?)\\\]/g,
@@ -109,11 +140,91 @@ function alignDisplayMath() {
   };
   return (tree: any) => visit(tree);
 }
+const DETAILS_OPEN = /^<details(\s+open)?\s*>$/i;
+const DETAILS_CLOSE = /^<\/details\s*>$/i;
+const SUMMARY_OPEN = /^<summary\s*>$/i;
+const SUMMARY_CLOSE = /^<\/summary\s*>$/i;
+/**
+ * Turn <details>/<summary> tag nodes (one per tag after `splitToggleTags`) into a real
+ * Notion-style toggle wrapping the Markdown between them. Nesting works; a missing
+ * </details> closes at the end of its parent; stray tags are dropped. A summary that is
+ * one paragraph becomes inline text; a heading ("## Title") stays a heading, which makes
+ * a toggle heading.
+ *   html"<details>" html"<summary>" heading html"</summary>" paragraph… html"</details>"
+ *   -> toggle{ toggleSummary{ heading }, paragraph… }  (rendered <details class="toggle">)
+ */
+function groupToggles() {
+  interface Frame {
+    open: boolean;
+    summary: any[] | null;
+    inSummary: boolean;
+    children: any[];
+  }
+  const tagOf = (node: any) => (node.type === "html" ? node.value.trim() : "");
+  const toggleOf = (frame: Frame) => {
+    const summary = frame.summary ?? [];
+    const only = summary.length === 1 ? summary[0] : null;
+    return {
+      type: "toggle",
+      data: {
+        hName: "details",
+        hProperties: { className: ["toggle"], ...(frame.open && { open: true }) },
+      },
+      children: [
+        {
+          type: "toggleSummary",
+          data: { hName: "summary" },
+          children:
+            only?.type === "paragraph"
+              ? only.children
+              : summary.length
+                ? summary
+                : [{ type: "text", value: "Details" }],
+        },
+        ...frame.children,
+      ],
+    };
+  };
+  const visit = (parent: any) => {
+    if (!parent.children) return;
+    const stack: Frame[] = [
+      { open: false, summary: null, inSummary: false, children: [] },
+    ];
+    for (const child of parent.children) {
+      const tag = tagOf(child);
+      const frame = stack.at(-1)!;
+      const opening = DETAILS_OPEN.exec(tag);
+      if (opening)
+        stack.push({
+          open: Boolean(opening[1]),
+          summary: null,
+          inSummary: false,
+          children: [],
+        });
+      else if (SUMMARY_OPEN.test(tag)) {
+        if (stack.length > 1 && !frame.summary) {
+          frame.summary = [];
+          frame.inSummary = true;
+        }
+      } else if (SUMMARY_CLOSE.test(tag)) frame.inSummary = false;
+      else if (DETAILS_CLOSE.test(tag)) {
+        if (stack.length > 1) stack.at(-2)!.children.push(toggleOf(stack.pop()!));
+      } else {
+        visit(child);
+        (frame.inSummary ? frame.summary! : frame.children).push(child);
+      }
+    }
+    while (stack.length > 1) stack.at(-2)!.children.push(toggleOf(stack.pop()!));
+    parent.children = stack[0].children;
+  };
+  return (tree: any) => visit(tree);
+}
 const remarkPlugins = [
   remarkGfm,
   remarkMath,
   restoreEscapedDollars,
   alignDisplayMath,
+  groupToggles,
   tidyInlineHtml,
 ];
 const rehypePlugins = [rehypeKatex];
@@ -177,13 +288,72 @@ function MermaidDiagram({ code }: { code: string }) {
     />
   );
 }
+/**
+ * A fenced code block: a bar with its language and a Copy button, then the code with
+ * syntax colours. highlight.js (its common languages) loads on first use, like Mermaid;
+ * a block without a language, or one it does not know, stays plain. Its output is the
+ * escaped code wrapped in <span class="hljs-…">, so the inner HTML holds no markup
+ * from the note itself.
+ */
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  const [highlighted, setHighlighted] = useState("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    let current = true;
+    setHighlighted("");
+    if (language)
+      void import("highlight.js/lib/common").then(({ default: hljs }) => {
+        if (current && hljs.getLanguage(language))
+          setHighlighted(hljs.highlight(code, { language }).value);
+      });
+    return () => {
+      current = false;
+    };
+  }, [code, language]);
+  // The Clipboard API exists only in secure contexts (HTTPS, localhost).
+  const copy = navigator.clipboard
+    ? () =>
+        void navigator.clipboard.writeText(code).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), COPIED_LABEL_MS);
+        })
+    : null;
+  return (
+    <div className="code-block">
+      <div className="code-block-bar">
+        <span>{language || "code"}</span>
+        {copy && (
+          <button className="quiet" onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        )}
+      </div>
+      {highlighted ? (
+        <pre>
+          <code
+            className="hljs"
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        </pre>
+      ) : (
+        <pre>
+          <code>{code}</code>
+        </pre>
+      )}
+    </div>
+  );
+}
+/** How long a code block's Copy button says "Copied". */
+const COPIED_LABEL_MS = 1500;
 const components: Components = {
-  pre: ({ children, node, ...rest }) => {
+  pre: ({ children }) => {
     // react-markdown renders ```lang blocks as <pre><code class="language-lang">.
     const code: any = Array.isArray(children) ? children[0] : children;
-    if (String(code?.props?.className ?? "").includes("language-mermaid"))
-      return <MermaidDiagram code={String(code.props.children ?? "").trim()} />;
-    return <pre {...rest}>{children}</pre>;
+    const language =
+      /language-(\S+)/.exec(String(code?.props?.className ?? ""))?.[1] ?? "";
+    const text = String(code?.props?.children ?? "").replace(/\n$/, "");
+    if (language === "mermaid") return <MermaidDiagram code={text.trim()} />;
+    return <CodeBlock code={text} language={language} />;
   },
   img: ({ alt }) => imagePlaceholder(alt),
   a: ({ href, children }) => (

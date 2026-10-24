@@ -33,6 +33,12 @@
   --bad-soft: light-dark(#f8e2dc, #3a2420);
   --bad-text: light-dark(#8a2e21, #f4aa9c);
   --track: light-dark(#e2e3da, #2c2c2a);
+  /* Syntax colours in code blocks, read against --surface-sunken. */
+  --code-keyword: light-dark(#7a3e9d, #c79bdc);
+  --code-string: light-dark(#2f6b2f, #9ccc8a);
+  --code-number: light-dark(#8a5a00, #e0b46a);
+  --code-title: light-dark(#1f5a8a, #8fbde6);
+  --code-type: light-dark(#9a4b2a, #e69a7a);
   --backdrop: light-dark(rgb(22 38 34 / 0.7), rgb(0 0 0 / 0.72));
   --shadow: light-dark(
     0 1px 2px rgb(27 40 38 / 0.05),
@@ -680,6 +686,107 @@ pre {
   border-radius: 4px;
   padding: 0.1em 0.35em;
 }
+/* Code blocks: a bar with the language and Copy, then the code, in one frame. */
+.code-block {
+  margin: 0 0 1em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+.code-block-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.15rem 0.35rem 0.15rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.code-block-bar .quiet {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+}
+.markdown .code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag {
+  color: var(--code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: var(--code-string);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol {
+  color: var(--code-number);
+}
+.hljs-title,
+.hljs-section,
+.hljs-selector-id {
+  color: var(--code-title);
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-selector-class {
+  color: var(--code-type);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-name {
+  color: var(--accent-text);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--text-subtle);
+  font-style: italic;
+}
+.hljs-deletion {
+  color: var(--bad-text);
+}
+/* Toggles (<details>/<summary> in Markdown), Notion style: a triangle that turns when
+   open, with the content indented under the title. A heading in the summary stays on
+   the triangle's line (a toggle heading). */
+.markdown details.toggle {
+  margin: 0.4em 0 0.8em;
+  padding-left: 1.4em;
+}
+.markdown details.toggle > summary {
+  display: block;
+  margin-left: -1.4em;
+  font-weight: inherit;
+  list-style: none;
+}
+.markdown details.toggle > summary::-webkit-details-marker {
+  display: none;
+}
+.markdown details.toggle > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.4em;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+.markdown details.toggle[open] > summary::before {
+  transform: rotate(90deg);
+  transform-origin: 0.3em 50%;
+}
+.markdown details.toggle > summary > :is(h1, h2, h3, h4, h5, h6) {
+  display: inline;
+  margin: 0;
+}
+.markdown details.toggle[open] > summary {
+  margin-bottom: 0.5em;
+}
 .markdown table {
   border-collapse: collapse;
   width: 100%;
@@ -1097,6 +1204,12 @@ label.file-button input {
   right: 1.25rem;
   bottom: 1.25rem;
   z-index: 10;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  line-height: 1;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
 }
 /* The library picker (only with several libraries) sits at the right end of the tabs. */

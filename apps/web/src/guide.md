@@ -39,7 +39,19 @@ Your answer is remembered everywhere: if you answered a question in one set, eve
 
 ## Materials
 
-Your study notes, one section at a time, with formulas, tables and pictures. The app remembers where you stopped. **Ask AI about this section** under each section asks the tutor about exactly that section; **↑ Top** jumps back up. Open another file, then **↩ Back to …** at the top (or the browser's Back) returns to the file you read before, at the same section and scroll position, so you can switch between two files. Notes are read-only here: the app never changes your files.
+Your study notes, one section at a time, with formulas, tables and pictures. The app remembers where you stopped. **Ask AI about this section** under each section asks the tutor about exactly that section; the round **↑** button jumps back up. Open another file, then **↩ Back to …** at the top (or the browser's Back) returns to the file you read before, at the same section and scroll position, so you can switch between two files. Notes are read-only here: the app never changes your files.
+
+**Toggles and code in your notes.** Fold any part of a note, Notion style, with a `<details>` block; a heading in the summary makes a toggle heading. Add `open` (`<details open>`) to start it unfolded. Keep a blank line around the Markdown inside:
+
+```markdown
+<details><summary>## Why does duration matter?</summary>
+
+Any Markdown here: text, lists, formulas, tables, code, more toggles.
+
+</details>
+```
+
+A fenced code block (three backticks, then the language: `python`, `sql`, `r`, `js` …) shows the language, syntax colours and a **Copy** button. Code is only shown, never run.
 
 ## The AI tutor
 
@@ -56,7 +68,8 @@ It only sends the current question or section, the recent messages of that chat,
 **Choose how the tutor connects** in **Settings → AI provider**:
 
 - **ChatGPT subscription (Codex login)**: uses your existing ChatGPT plan through the Codex app on this computer. Nothing to pay per message.
-- **API key**: use your own key. Free option: make a key at [openrouter.ai/keys](https://openrouter.ai/keys), choose **API key**, keep the base URL `https://openrouter.ai/api/v1`, paste the key, click **Browse the endpoint's models**, type `free`, click `openrouter/free`, then **Save**. Free models are sometimes busy; just try again.
+- **Anthropic key**: click **+ Anthropic key**, paste your key from [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys), then **Save**; the Claude models are filled in.
+- **Other API key**: use your own key. Free option: make a key at [openrouter.ai/keys](https://openrouter.ai/keys), choose **+ Other API key**, keep the base URL `https://openrouter.ai/api/v1`, paste the key, click **Browse the endpoint's models**, type `free`, click `openrouter/free`, then **Save**. Free models are sometimes busy; just try again.
 
 Then pick the model in **Settings → AI model**. The app caps AI use at 60 requests an hour and 300 a day, so a mistake cannot run up a bill.
 

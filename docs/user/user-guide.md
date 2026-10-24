@@ -21,7 +21,7 @@ flowchart LR
 - The desktop app, or a computer that stays on, with Docker.
 - A folder of question banks (Markdown). Step 4 below shows how to make one from your PDFs.
 - Optional: a folder of Markdown study notes, for the Materials page.
-- Optional, for the AI tutor: Codex signed in with ChatGPT on the same computer, or an API key (OpenRouter, OpenAI or similar).
+- Optional, for the AI tutor: Codex signed in with ChatGPT on the same computer, or an API key (Anthropic, OpenRouter, OpenAI or similar).
 
 ## 2. Start the app
 
@@ -55,7 +55,7 @@ To update later: `docker compose pull && docker compose up -d`. Your answers, ch
 | Page | What you do there |
 |---|---|
 | **Practice** | Pick a topic and chapter, then **Start**, **Continue** or **Review**. Mark an answer *unsure* if you guessed. **★ Flagged**, **✗ Mistakes** and **? Unsure** at the top review those questions from every source. **Resume last session** goes back to the exact question you left. On a question, Previous and Next stay at the top. |
-| **Materials** | Read your study notes one section at a time. **Ask AI about this section** explains it. **↑ Top** jumps back up. **↩ Back to …** (or the browser's Back) returns to the file you read before, at the same spot. |
+| **Materials** | Read your study notes one section at a time. **Ask AI about this section** explains it. the round **↑** button jumps back up. Toggles (`<details>`) fold and unfold; code blocks have syntax colours and **Copy**. **↩ Back to …** (or the browser's Back) returns to the file you read before, at the same spot. |
 | **Ask AI** | Free questions to the tutor, and **Review my study**: your weak concepts and the next three chapters to practise. |
 | **Notes** | Your own notes and saved tutor replies, each with **Delete**. The AI notes tab has a chat box; **Continue this chat** reopens the conversation a note came from. |
 | **History** | Every tutor conversation, grouped by where it started: Materials, Practice questions, or Ask AI. The buttons at the top show one group at a time (the app remembers your choice). **Delete** removes one conversation; saved AI notes stay. |
@@ -101,9 +101,11 @@ The question format is in the [format guide](question-format.md).
 - It only sends the current question or note section, recent messages of that chat, and what it looks up.
 - Only one reply runs at a time. Practice works fully without AI.
 
-**Use an API key instead of Codex.**
+**Use an Anthropic (Claude) key.** **Settings → AI provider** → **+ Anthropic key**, paste the key from [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys), then **Save**. The base URL and the models (`claude-sonnet-5-5`, `claude-opus-5-5`) are filled in for you. A key that starts with `sk-ant-` pasted into any API connection switches it to Anthropic by itself.
 
-1. **Settings → AI provider** → choose **API key**.
+**Use another API key instead of Codex.**
+
+1. **Settings → AI provider** → choose **+ Other API key**.
 2. Base URL: keep `https://openrouter.ai/api/v1` for OpenRouter, or pick another from the list.
 3. Paste your key. Then click **Browse the endpoint's models**, type `free` in the filter, and click the models you want (for example `openrouter/free`). Click **Save**.
 4. The models now appear under **Settings → AI model**. A free OpenRouter model can be busy ("rate-limited upstream"); try again or pick another.

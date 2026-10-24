@@ -91,7 +91,7 @@ test("practice, notes and AI connections work over plain HTTP at a remote host n
 
   // Add an AI connection; a local endpoint keeps the check offline.
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "+ API key" }).click();
+  await page.getByRole("button", { name: "+ Other API key" }).click();
   await page.getByLabel("Base URL").last().fill("http://localhost:11434/v1");
   await page
     .getByLabel("Models (one ID per line, first = backup model)")

@@ -257,7 +257,7 @@ function LazyDetails({
     </details>
   );
 }
-/** A floating "Top" button, shown once the page is scrolled past one screen. */
+/** A small floating "↑" button, shown once the page is scrolled past one screen. */
 function BackToTop() {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -270,9 +270,10 @@ function BackToTop() {
     <button
       className="back-to-top"
       aria-label="Back to top"
+      title="Back to top"
       onClick={() => window.scrollTo(0, 0)}
     >
-      ↑ Top
+      ↑
     </button>
   ) : null;
 }
