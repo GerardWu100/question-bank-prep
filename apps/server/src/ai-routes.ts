@@ -20,6 +20,28 @@ const MAX_NOTES = 30;
 const STEM_CHARACTERS = 400;
 const SOLUTION_CHARACTERS = 500;
 const NOTE_CHARACTERS = 2000;
+/** One tool step in a reply's trace names what it looked at in at most this many characters. */
+const TOOL_DETAIL_CHARACTERS = 200;
+/** Between two saved replies in one chat's AI note. */
+const NOTE_REPLY_SEPARATOR = '\n\n---\n\n';
+
+/**
+ * What a tool call looked at, for the reply's trace: a search's query, a file and its
+ * lines, a ripgrep command line, a calculation's first line. Empty when there is nothing
+ * worth naming (the study-review tools take no arguments).
+ */
+function toolDetail(name: string, args: Record<string, unknown>): string {
+  const text = (value: unknown) => (typeof value === 'string' ? value : '');
+  const detail =
+    name === 'search_materials' || name === 'search_study_notes' ? `"${text(args.query)}"`
+    : name === 'read_material' ? text(args.id)
+    : name === 'rg' && Array.isArray(args.args) ? args.args.map(String).join(' ')
+    : name === 'list_files' ? [text(args.folder), text(args.glob)].filter(Boolean).join(' ')
+    : name === 'read_file' ? `${text(args.path)} from line ${Number(args.offset) || 1}`
+    : name === 'calculate' ? text(args.code).split('\n')[0]
+    : '';
+  return detail.slice(0, TOOL_DETAIL_CHARACTERS);
+}
 
 /**
  * Per-chapter counts (answered, wrong, unsure) so error rates can be judged, plus the
@@ -100,18 +122,29 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
   }
   // Chat lists and lookups skip messages, which hold every reply ever streamed.
   const chatSummaries = (libraryId: string) => store.list(libraryId, 'chat', ['messages']);
+  /** The chat's AI note, if any (the oldest, should earlier versions have saved several). */
+  const chatNote = (libraryId: string, chatId: string): any =>
+    store.list(libraryId, 'note').filter((note: any) => note.provenance === 'ai' && note.chatId === chatId)
+      .sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt)))[0];
+  /** Replies already in a chat AI note; a note saved before one note per chat holds one. */
+  const noteReplyIds = (note: any): string[] => note.sourceMessageIds ?? (note.sourceMessageId ? [note.sourceMessageId] : []);
+  /** A chat as sent to the page, with the IDs of replies already in its AI note. */
+  const withSavedReplies = (libraryId: string, chat: any) => {
+    const note = chatNote(libraryId, chat.id);
+    return { ...chat, savedMessageIds: note ? noteReplyIds(note) : [] };
+  };
   app.get(base + '/chats', async (request: any) => ({ chats: chatSummaries(request.params.libraryId) }));
   app.post(base + '/chats', async (request: any) => {
     const libraryId = request.params.libraryId; const body = request.body ?? {}; store.library(libraryId);
     if (body.questionId) {
       store.get(libraryId, body.questionId, 'question');
       if (body.setId) store.question(libraryId, body.questionId, body.setId);
-      const prior = chatSummaries(libraryId).find(chat => chat.questionId === body.questionId);
+      const prior = chatSummaries(libraryId).find(chat => chat.questionId === body.questionId && !chat.branchOf);
       if (prior) return visibleChat(libraryId, store.put(libraryId, 'chat', { ...store.get(libraryId, prior.id, 'chat'), setId: body.setId ?? null }), body.setId);
     }
     // A reading chat belongs to one section of one material file and is reopened there.
     if (body.readingPath) {
-      const prior = chatSummaries(libraryId).find(chat => chat.readingPath === body.readingPath && chat.readingTitle === (body.readingTitle ?? ''));
+      const prior = chatSummaries(libraryId).find(chat => chat.readingPath === body.readingPath && chat.readingTitle === (body.readingTitle ?? '') && !chat.branchOf);
       if (prior) return store.get(libraryId, prior.id, 'chat');
       return store.put(libraryId, 'chat', { id: id(), title: String(body.title || body.readingTitle || 'Material').slice(0, 200), kind: 'reading', readingPath: String(body.readingPath), readingTitle: String(body.readingTitle ?? ''), questionId: null, setId: null, messages: [] });
     }
@@ -126,7 +159,7 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
   app.delete(base + '/chats/:id', async (request: any) => deleteChats(request.params.libraryId, [request.params.id]));
   app.get(base + '/chats/:id', async (request: any) => {
     const chat = store.get(request.params.libraryId, request.params.id, 'chat');
-    return visibleChat(request.params.libraryId, chat, request.query.setId);
+    return withSavedReplies(request.params.libraryId, visibleChat(request.params.libraryId, chat, request.query.setId));
   });
   app.get(base + '/chats/:chatId/messages/:messageId/sources/:sourceId', async (request: any) => {
     const { libraryId, chatId, messageId, sourceId } = request.params;
@@ -146,8 +179,35 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
     const chat = store.get(libraryId, chatId, 'chat');
     const message = chat.messages.find((message: any) => message.id === messageId && message.role === 'assistant' && message.status === 'completed');
     if (!message) throw new AppError(400, 'INCOMPLETE_REPLY', 'Only a completed assistant reply can be saved as an AI note.');
-    return store.idempotent(request, () =>
-      store.saveNote(libraryId, { id: id(), title: String(request.body?.title || chat.title).slice(0, 200), content: message.content, provenance: 'ai', model: message.model, provider: message.provider, sourceMessageId: messageId, chatId, sources: message.sources ?? [], createdAt: new Date().toISOString(), version: 1 }));
+    // One AI note per chat: saving another reply adds it to that note, and saving a reply
+    // already in it changes nothing. Branch a chat to keep a separate note.
+    return store.idempotent(request, () => {
+      const existing = chatNote(libraryId, chatId);
+      if (!existing)
+        return store.saveNote(libraryId, { id: id(), title: String(request.body?.title || chat.title).slice(0, 200), content: message.content, provenance: 'ai', model: message.model, provider: message.provider, sourceMessageIds: [messageId], chatId, sources: message.sources ?? [], createdAt: new Date().toISOString(), version: 1 });
+      const savedIds = noteReplyIds(existing);
+      if (savedIds.includes(messageId)) return existing;
+      const sources = new Map<string, any>();
+      for (const source of [...existing.sources ?? [], ...message.sources ?? []]) sources.set(source.id, source);
+      const { sourceMessageId: _single, ...rest } = existing;
+      return store.saveNote(libraryId, { ...rest, // Appended, so an edit made on the Notes page stays.
+        content: existing.content + NOTE_REPLY_SEPARATOR + message.content, sourceMessageIds: [...savedIds, messageId], sources: [...sources.values()], model: message.model, provider: message.provider, version: existing.version + 1 });
+    });
+  });
+  /**
+   * Copy a chat up to and including one assistant reply into a new chat, so the
+   * conversation can go another way (and be saved as its own AI note). The copy keeps the
+   * question or material section; `branchOf` names the original, which stays the one a
+   * question or section reopens.
+   */
+  app.post(base + '/chats/:chatId/branch', async (request: any) => {
+    const { libraryId, chatId } = request.params; const body = request.body ?? {};
+    const chat = store.get(libraryId, chatId, 'chat');
+    const end = chat.messages.findIndex((message: any) => message.id === body.messageId && message.role === 'assistant' && message.status !== 'running');
+    if (end < 0) throw new AppError(400, 'INVALID_BRANCH', 'Branch from a finished tutor reply.');
+    const branch = store.idempotent(request, () =>
+      store.put(libraryId, 'chat', { ...chat, id: id(), title: `${chat.title} · branch`.slice(0, 200), branchOf: chat.id, messages: chat.messages.slice(0, end + 1) }));
+    return visibleChat(libraryId, branch, body.setId);
   });
   app.post(base + '/chats/:id/messages', async (request: any) => {
     const libraryId = request.params.libraryId; const body = request.body ?? {};
@@ -223,7 +283,7 @@ export function registerAIRoutes(app: FastifyInstance, store: Store, options: { 
         else if (name === 'get_my_notes' && !hint) result = myNotes(store, libraryId);
         else throw new Error('Tool is unavailable in this mode');
         if (name === 'search_materials' || name === 'read_material') for (const source of result) sources.set(source.id, { id: source.id, version: source.contentVersion ?? source.version, title: source.title ?? source.path, kind: source.kind });
-        toolSummaries.push({ name, status: 'completed' });
+        toolSummaries.push({ name, status: 'completed', detail: toolDetail(name, args) });
         return result;
       };
       // One transaction per save: the chat and run share one disk sync every 200 ms.

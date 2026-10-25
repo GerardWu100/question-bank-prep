@@ -63,7 +63,9 @@ The tutor sits under every question, under every Materials section, on **Ask AI*
 - **Explain** (after you answer): why the key is right and why your choice was wrong.
 - **Review my study** (Ask AI page): reads your results by chapter, your mistakes, your questions and your notes, then names your weak spots and the next three chapters to practise.
 - It searches your study notes and ends each answer with a **Source:** line naming the file and section it used.
-- **Save as AI note** under a reply keeps it on the Notes page.
+- **Save as AI note** under a reply keeps it on the Notes page. Each conversation has one AI note: saving a later reply adds it to that note, and a reply already saved shows **✓ In AI note**.
+- **Branch from here** copies the conversation up to that reply into a new one, so you can take it another way and save it as a separate note. The question or section keeps reopening the original; branches are in **History**.
+- **Show reasoning** opens what the tutor looked up (searches, files read, calculations) and its reasoning summary. It starts hidden, and under a practice question it appears only after you answer, because it could give the answer away.
 
 It only sends the current question or section, the recent messages of that chat, and what it looks up.
 

@@ -1088,7 +1088,8 @@ pre {
   max-width: 100%;
   height: auto;
 }
-button.small {
+button.small,
+span.small {
   padding: 0.3rem 0.7rem;
   font-size: 0.85rem;
 }
@@ -1109,13 +1110,31 @@ details.deck > summary h2 {
 details.deck[open] > summary {
   margin-bottom: 0.3rem;
 }
+/* A reply's reasoning trace: the lookups it made, then the model's reasoning summary. */
 .reasoning {
   margin-bottom: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--border-strong);
   font-size: 0.9em;
   color: var(--text-muted);
 }
-.reasoning summary {
-  cursor: pointer;
+.trace-steps {
+  margin: 0 0 0.4rem;
+  padding-left: 1.3rem;
+}
+.trace-steps code {
+  margin-left: 0.4rem;
+  overflow-wrap: anywhere;
+}
+/* Show reasoning, Save as AI note and Branch from here, in one line under a reply. */
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.6rem;
+}
+.question-meta {
+  margin-top: 0.4rem;
 }
 /* Narrow windows: name, then bar and count, then the buttons, each on its own line. */
 @media (max-width: 1000px) {

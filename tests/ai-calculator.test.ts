@@ -240,7 +240,7 @@ describe('durable tutor runs', () => {
       const saved = (await app.inject({ method: 'POST', url: `${base}/chats/${chat.id}/messages/${message.id}/save-note`, payload: { operationId: 'save-ai-note' } })).json();
       expect(saved.provenance).toBe('ai'); expect(saved.content).toBe(message.content);
       const edited = (await app.inject({ method: 'PUT', url: `${base}/notes/${saved.id}`, payload: { content: 'Human edit', expectedHash: saved.hash } })).json();
-      expect(edited.provenance).toBe('ai'); expect(edited.sourceMessageId).toBe(message.id);
+      expect(edited.provenance).toBe('ai'); expect(edited.sourceMessageIds).toEqual([message.id]);
     } finally { await app.close(); }
   });
 });

@@ -47,6 +47,19 @@ const RUN_POLL_HIDDEN_MS = 3000;
 /** "01-quantitative-methods" -> "01 Quantitative Methods"; "qbank-2025" -> "Qbank 2025". */
 const labelOf = (slug: string) =>
   slug.replace(/-/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+/** Tutor tool name -> what the step did, in a reply's reasoning trace. */
+const TOOL_LABELS: Record<string, string> = {
+  rg: "Searched notes",
+  search_study_notes: "Searched notes",
+  list_files: "Listed note files",
+  read_file: "Read",
+  search_materials: "Searched the library",
+  read_material: "Read source",
+  calculate: "Calculated",
+  get_my_mistakes: "Read your mistakes",
+  get_my_questions: "Read your questions",
+  get_my_notes: "Read your notes",
+};
 /** One-click tutor requests behind the Hint and Explain buttons. */
 const HINT_REQUEST =
   "Give me one hint for this question. Do not reveal the answer.";
@@ -410,6 +423,8 @@ function App() {
     [needsLogin, setNeedsLogin] = useState(false),
     [password, setPassword] = useState(""),
     [caseOpen, setCaseOpen] = useState(true),
+    // Replies whose reasoning trace is shown; every trace starts hidden.
+    [openTraces, setOpenTraces] = useState<Set<string>>(() => new Set()),
     [materialRoot, setMaterialRoot] = useState(false),
     // The desktop app's chosen folders; null in a browser or when it shows a server.
     [desktopFolders, setDesktopFolders] = useState<DesktopFolders | null>(null),
@@ -484,7 +499,7 @@ function App() {
       const summaries = (await api(`${scope}/chats`)).chats;
       const prior =
         summaries.find((c: any) => c.id === openHere) ??
-        summaries.find(belongsHere);
+        summaries.find((c: any) => belongsHere(c) && !c.branchOf);
       setChat(prior ? await api(`${scope}/chats/${prior.id}`) : null);
     });
   }, [page, readingPath, sectionKey, library]);
@@ -770,7 +785,9 @@ function App() {
       api(`${scope}/chats`),
     ]);
     // Reopen this question's saved tutor conversation, if any, below the question.
-    const prior = summaries.find((c: any) => c.questionId === questionId);
+    const prior = summaries.find(
+      (c: any) => c.questionId === questionId && !c.branchOf,
+    );
     const priorChat = prior
       ? await api(
           `${scope}/chats/${prior.id}?setId=${encodeURIComponent(set.id)}`,
@@ -1259,13 +1276,29 @@ function App() {
     });
   const tutorConversation = (
     <>
+      {chat?.branchOf && (
+        <p className="muted" role="note">
+          A branch: a copy of another conversation up to one reply. It is saved
+          as its own AI note.
+        </p>
+      )}
       {chat?.messages?.map((m: any) => (
         <article key={m.id} className={`message ${m.role}`}>
-          {m.reasoning && (
-            // The model's reasoning summary, folded away until asked for.
-            <LazyDetails className="reasoning" summary="Reasoning">
-              {() => <Markdown text={m.reasoning} />}
-            </LazyDetails>
+          {openTraces.has(m.id) && (
+            // The model's reasoning summary and the lookups it made, shown on request.
+            <div className="reasoning">
+              {m.tools?.length > 0 && (
+                <ol className="trace-steps">
+                  {m.tools.map((step: any, index: number) => (
+                    <li key={index}>
+                      {TOOL_LABELS[step.name] ?? step.name}
+                      {step.detail && <code>{step.detail}</code>}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {m.reasoning && <Markdown text={m.reasoning} />}
+            </div>
           )}
           <Markdown text={m.content || (m.status === "running" ? "…" : "")} />
           {/* The question you are on is not worth a citation chip. */}
@@ -1292,24 +1325,75 @@ function App() {
                 ))}
             </div>
           )}
-          {m.role === "assistant" && m.status === "completed" && (
-            <button
-              className="quiet small"
-              onClick={() =>
-                void run(async () => {
-                  await api(
-                    `${scope}/chats/${chat.id}/messages/${m.id}/save-note`,
-                    {
-                      title: chat.title,
-                      operationId: operation(),
-                    },
-                  );
-                  setSaveStatus("AI note saved");
-                })
-              }
-            >
-              Save as AI note
-            </button>
+          {m.role === "assistant" && m.status !== "running" && (
+            <div className="message-actions">
+              {/* Before you answer, the trace of a hint could give the answer away. */}
+              {(m.reasoning || m.tools?.length > 0) &&
+                !(m.mode === "hint" && page === "Practice" && !submitted) && (
+                  <button
+                    className="quiet small"
+                    aria-expanded={openTraces.has(m.id)}
+                    onClick={() =>
+                      setOpenTraces((open) => {
+                        const next = new Set(open);
+                        if (!next.delete(m.id)) next.add(m.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {openTraces.has(m.id) ? "Hide reasoning" : "Show reasoning"}
+                  </button>
+                )}
+              {m.status === "completed" &&
+                (chat.savedMessageIds?.includes(m.id) ? (
+                  <span className="muted small">✓ In AI note</span>
+                ) : (
+                  <button
+                    className="quiet small"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const note = await api(
+                          `${scope}/chats/${chat.id}/messages/${m.id}/save-note`,
+                          {
+                            title: chat.title,
+                            operationId: operation(),
+                          },
+                        );
+                        setChat((open: any) =>
+                          open?.id === chat.id
+                            ? { ...open, savedMessageIds: note.sourceMessageIds }
+                            : open,
+                        );
+                        setSaveStatus(
+                          note.version > 1 ? "Added to AI note" : "AI note saved",
+                        );
+                      })
+                    }
+                  >
+                    Save as AI note
+                  </button>
+                ))}
+              <button
+                className="quiet small"
+                disabled={busy || activeRun !== null}
+                title="Copy this conversation up to here into a new one"
+                onClick={() =>
+                  void run(async () => {
+                    setChat(
+                      await api(`${scope}/chats/${chat.id}/branch`, {
+                        messageId: m.id,
+                        ...(chatSetId(chat) ? { setId: chatSetId(chat) } : {}),
+                        operationId: operation(),
+                      }),
+                    );
+                    setSaveStatus("Branched into a new conversation");
+                  })
+                }
+              >
+                Branch from here
+              </button>
+            </div>
           )}
         </article>
       ))}
@@ -1808,28 +1892,6 @@ function App() {
                 </span>
               </div>
               <section className="panel question">
-                <div className="row">
-                  <span className="muted">
-                    {[
-                      labelOf(question.topic),
-                      labelOf(question.source),
-                      chapterLabel(question.chapter),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "Practice"}
-                  </span>
-                  <button
-                    className="quiet"
-                    aria-pressed={question.annotation.flagged}
-                    onClick={() =>
-                      void run(() =>
-                        annotation({ flagged: !question.annotation.flagged }),
-                      )
-                    }
-                  >
-                    {question.annotation.flagged ? "★ Flagged" : "☆ Flag"}
-                  </button>
-                </div>
                 {question.active === false ? (
                   <h2>Source removed</h2>
                 ) : (
@@ -1903,6 +1965,30 @@ function App() {
                       <span role="status" className="save-status">
                         {saveStatus}
                       </span>
+                    </div>
+                    {/* Where the question comes from, and Flag: below the question and
+                        choices, so the question is the first thing on the page. */}
+                    <div className="row question-meta">
+                      <span className="muted">
+                        {[
+                          labelOf(question.topic),
+                          labelOf(question.source),
+                          chapterLabel(question.chapter),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "Practice"}
+                      </span>
+                      <button
+                        className="quiet"
+                        aria-pressed={question.annotation.flagged}
+                        onClick={() =>
+                          void run(() =>
+                            annotation({ flagged: !question.annotation.flagged }),
+                          )
+                        }
+                      >
+                        {question.annotation.flagged ? "★ Flagged" : "☆ Flag"}
+                      </button>
                     </div>
                     {submitted && (
                       <div className={`result ${question.setState.status}`}>
