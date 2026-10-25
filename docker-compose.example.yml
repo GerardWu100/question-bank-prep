@@ -46,8 +46,8 @@ services:
       # Most AI model requests the whole app may send (all connections, backups
       # included), so a leaked password cannot drain your plan or API credit. One tutor reply is 1 request plus 1 per
       # tool round (at most 6). Whole numbers; 0 means no cap.
-      - AI_MAX_REQUESTS_PER_HOUR=60
-      - AI_MAX_REQUESTS_PER_DAY=300
+      - AI_MAX_REQUESTS_PER_HOUR=30
+      - AI_MAX_REQUESTS_PER_DAY=150
     volumes:
       # Folder on your machine, then the path inside the container. Edit the
       # left side to keep files somewhere else; keep the right side as it is.

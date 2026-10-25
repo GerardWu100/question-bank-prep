@@ -36,7 +36,7 @@ const usageCap = (name: "AI_MAX_REQUESTS_PER_HOUR" | "AI_MAX_REQUESTS_PER_DAY", 
   return value;
 };
 const usageLimit = new ModelUsageLimit(
-  { perHour: usageCap("AI_MAX_REQUESTS_PER_HOUR", 60), perDay: usageCap("AI_MAX_REQUESTS_PER_DAY", 300) },
+  { perHour: usageCap("AI_MAX_REQUESTS_PER_HOUR", 30), perDay: usageCap("AI_MAX_REQUESTS_PER_DAY", 150) },
   resolve(dataDirectory, "ai-usage.json"),
 );
 const host = process.env.STUDY_HOST || "127.0.0.1";

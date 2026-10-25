@@ -15,8 +15,8 @@ services:
     environment:
       - TZ=America/Toronto
       - STUDY_PASSWORD=${STUDY_PASSWORD:?Set STUDY_PASSWORD in .env}
-      - AI_MAX_REQUESTS_PER_HOUR=${AI_MAX_REQUESTS_PER_HOUR:-60}
-      - AI_MAX_REQUESTS_PER_DAY=${AI_MAX_REQUESTS_PER_DAY:-300}
+      - AI_MAX_REQUESTS_PER_HOUR=${AI_MAX_REQUESTS_PER_HOUR:-30}
+      - AI_MAX_REQUESTS_PER_DAY=${AI_MAX_REQUESTS_PER_DAY:-150}
     volumes:
       # Long form so a missing folder is an error, not a new root-owned folder.
       - type: bind

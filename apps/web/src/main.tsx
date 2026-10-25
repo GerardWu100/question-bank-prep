@@ -220,8 +220,9 @@ const readingLabel = (path: string) => {
   return name === "notes" && parts.length > 1 ? parts[parts.length - 2] : name;
 };
 /**
- * Numbered buttons for every question in a set. Memoized: with thousands of questions,
- * re-rendering them on each keystroke in the tutor box made typing lag.
+ * Numbered buttons for every question in a set, in the sticky bar at the top. The row
+ * scrolls sideways and keeps the current question in view. Memoized: with thousands of
+ * questions, re-rendering them on each keystroke in the tutor box made typing lag.
  */
 const QuestionStrip = memo(function QuestionStrip({
   questionIds,
@@ -234,8 +235,18 @@ const QuestionStrip = memo(function QuestionStrip({
   position: number;
   onPick: (index: number) => void;
 }) {
+  const strip = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = strip.current;
+    const current = row?.children[position] as HTMLElement | undefined;
+    if (!row || !current) return;
+    // Centre the current button by moving the row only; scrollIntoView could also
+    // scroll the page.
+    row.scrollLeft =
+      current.offsetLeft - row.offsetLeft - (row.clientWidth - current.offsetWidth) / 2;
+  }, [position]);
   return (
-    <div className="question-strip">
+    <div className="question-strip" ref={strip}>
       {questionIds.map((id, index) => (
         <button
           key={id}
@@ -907,8 +918,12 @@ function App() {
       () => {},
     );
     const updated = await write;
-    if (token === navigationToken.current)
-      await loadQuestion(updated, index, token);
+    // A new question starts at its top, not where the last one was scrolled to.
+    if (
+      token === navigationToken.current &&
+      (await loadQuestion(updated, index, token))
+    )
+      window.scrollTo({ top: 0 });
   };
   // A stable click handler keeps QuestionStrip memoized; the ref sees the latest navigate.
   const navigateRef = useRef(navigate);
@@ -1749,19 +1764,26 @@ function App() {
           )}
           {library && page === "Practice" && question && (
             <>
-              {/* Stays at the top while scrolling, so Next is never a scroll away. */}
+              {/* Stays at the top while scrolling, so Next and the question numbers are
+                  never a scroll away. */}
               <div className="question-nav">
                 <button
                   className="secondary"
                   disabled={position === 0 || busy}
                   onClick={() => void run(() => navigate(position - 1))}
                 >
-                  ← Previous
+                  ← <span className="nav-word">Previous</span>
                 </button>
-                <span className="muted">
-                  {position + 1} / {activeSet.questionIds.length}
-                </span>
+                <QuestionStrip
+                  questionIds={activeSet.questionIds}
+                  statuses={activeSet.itemStatuses}
+                  position={position}
+                  onPick={pickQuestion}
+                />
                 <span className="question-nav-end">
+                  <span className="muted question-count">
+                    {position + 1} / {activeSet.questionIds.length}
+                  </span>
                   {question.answerKey &&
                     draft &&
                     submitted &&
@@ -1781,7 +1803,7 @@ function App() {
                     }
                     onClick={() => void run(() => navigate(position + 1))}
                   >
-                    Next →
+                    <span className="nav-word">Next</span> →
                   </button>
                 </span>
               </div>
@@ -1915,20 +1937,6 @@ function App() {
                   </>
                 )}
               </section>
-              {/* Where you are in the set, kept below the question so it does not distract. */}
-              <div className="set-progress">
-                <span className="eyebrow">{activeSet.title}</span>
-                <progress
-                  value={position + 1}
-                  max={activeSet.questionIds.length}
-                />
-                <QuestionStrip
-                  questionIds={activeSet.questionIds}
-                  statuses={activeSet.itemStatuses}
-                  position={position}
-                  onPick={pickQuestion}
-                />
-              </div>
               <section className="panel tutor-inline">
                 <h2>Ask AI</h2>
                 {tutorConversation}

@@ -448,16 +448,26 @@ legend {
 .question h1 {
   font-size: 1.4rem;
 }
+/* In the sticky bar between Previous and Next: one compact row that scrolls sideways
+   (wheel, trackpad or touch) without a visible scrollbar. */
 .question-strip {
   display: flex;
-  gap: 0.4rem;
-  overflow: auto;
-  margin: 1rem 0;
-  padding: 3px;
+  flex: 1;
+  min-width: 0;
+  gap: 0.3rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* Room for the selected button outline, which overflow would otherwise clip. */
+  padding: 4px;
+}
+.question-strip::-webkit-scrollbar {
+  display: none;
 }
 .question-strip button {
-  padding: 0.25rem 0.65rem;
-  min-width: 2.3rem;
+  flex: none;
+  padding: 0.15rem 0.45rem;
+  min-width: 2rem;
+  font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
 }
 /* Finished questions in the current set, by result. */
@@ -1152,8 +1162,10 @@ details.deck[open] > summary {
   .metric {
     grid-template-columns: 5rem 1fr 1.5rem;
   }
-  .question-strip {
-    max-width: calc(100vw - 2rem);
+  /* Phones: arrows only, so the question numbers keep most of the bar. */
+  .question-count,
+  .question-nav .nav-word {
+    display: none;
   }
 }
 /* Settings → AI provider: the endpoint's model list scrolls instead of growing the page. */
@@ -1201,6 +1213,15 @@ label.file-button input {
   padding: 0.5rem 0;
   background: var(--bg);
 }
+.question-count {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.question-nav > button,
+.question-nav-end {
+  flex: none;
+  white-space: nowrap;
+}
 .question-nav-end {
   display: flex;
   align-items: center;
@@ -1216,9 +1237,6 @@ label.file-button input {
 }
 .answer-row .save-status {
   margin-left: 0;
-}
-.set-progress {
-  margin: 1rem 0;
 }
 /* Note cards: the title and its Delete button on one summary line. */
 .note-card > summary {

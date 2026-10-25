@@ -35,7 +35,7 @@ Want the answer at once, without Submit? Turn on **Settings → Practice → Sho
 
 Text hard to read? **Settings → Display** sets the text size (A− / A+), theme (Light, Sepia with a warm yellow page, Dark, Dark sepia, or Auto to follow the device), line width (Full to Narrow) and line spacing.
 
-**Previous** and **Next** stay at the top of the screen; the left and right arrow keys do the same. The numbers under the question jump to any question in the set and are coloured by result. **☆ Flag** stars a question for later. **← Back to Practice** is at the bottom.
+**Previous**, **Next** and the question numbers stay in one bar at the top of the screen; the left and right arrow keys also move. A new question opens at its top. The numbers jump to any question in the set, are coloured by result, and scroll sideways in a long set. **☆ Flag** stars a question for later. **← Back to Practice** is at the bottom.
 
 Your answer is remembered everywhere: if you answered a question in one set, every other set shows that answer too.
 
@@ -73,7 +73,7 @@ It only sends the current question or section, the recent messages of that chat,
 - **Anthropic key**: click **+ Anthropic key**, paste your key from [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys), then **Save**; the Claude models are filled in.
 - **Other API key**: use your own key. Free option: make a key at [openrouter.ai/keys](https://openrouter.ai/keys), choose **+ Other API key**, keep the base URL `https://openrouter.ai/api/v1`, paste the key, click **Browse the endpoint's models**, type `free`, click `openrouter/free`, then **Save**. Free models are sometimes busy; just try again.
 
-Then pick the model in **Settings → AI model**. The app caps AI use at 60 requests an hour and 300 a day, so a mistake cannot run up a bill.
+Then pick the model in **Settings → AI model**. The app caps AI use at 30 requests an hour and 150 a day, so a mistake cannot run up a bill.
 
 ## Notes
 
