@@ -30,7 +30,7 @@ flowchart LR
 1. Download the installer for your system from the [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest).
 2. Install it. The installers are not signed: on macOS right-click the app → **Open**; on Windows click **More info → Run anyway**; on Linux run `chmod +x` on the AppImage.
 3. Open it and click **Create library**.
-4. **File → Question-bank folder…**: pick your `question_bank` folder. **File → Study-notes folder…**: pick your notes folder. The app restarts and loads them.
+4. **Settings → Folders**: next to **Question banks**, click **Choose folder…** and pick your `question_bank` folder. Next to **Materials**, pick your notes folder (for the CFA, `md_materials`). The app restarts and reads both in place; nothing is copied. The same choices are in the **File** menu.
 
 **Desktop app on your server's data.** If you run the Docker server below, choose **File → Connect to a server…** in the desktop app and enter the server's address. Questions, notes and progress then all come from the server; sign in with its password. **File → Use this computer (local data)** switches back.
 
@@ -60,9 +60,9 @@ To update later: `docker compose pull && docker compose up -d`. Your answers, ch
 | **Notes** | Your own notes and saved tutor replies, each with **Delete**. The AI notes tab has a chat box; **Continue this chat** reopens the conversation a note came from. |
 | **History** | Every tutor conversation, grouped by where it started: Materials, Practice questions, or Ask AI. The buttons at the top show one group at a time (the app remembers your choice). **Delete** removes one conversation; saved AI notes stay. |
 | **Guide** | This guide inside the app, with the three bank-building prompts ready to copy. |
-| **Settings** | Export and **Import study progress**, Display (text size, theme, line width, line spacing), Practice (show the answer on click), AI provider (Codex login or API key), tutor model and thinking level, and folder sync. |
+| **Settings** | Export and **Import study progress**, Display (text size, theme: Auto, Light, Sepia, Dark or Dark sepia, line width, line spacing), Practice (show the answer on click), AI provider (Codex login or API key), tutor model and thinking level, and Folders (where question banks and materials come from). |
 
-The app reads your question folder again each time you open it, and keeps your answer history when a file changes. Without a configured folder, use **Materials → Import Markdown → Choose a folder** (a whole bank) or **Choose a file** (one bank file).
+The app reads your question folder again each time you open it, and keeps your answer history when a file changes (**Settings → Folders → Sync now** forces it). On a server with no question-bank folder, **Settings → Folders → Upload a folder…** imports a whole bank folder into the library instead.
 
 **Move your progress to another install** (for example from the server to the desktop app):
 

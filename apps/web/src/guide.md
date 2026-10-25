@@ -1,15 +1,17 @@
 ## Start here
 
-**Desktop app.** Click **Create library**. Then, in the menu bar:
+**Desktop app.** Click **Create library**. Then open **Settings → Folders**:
 
-1. **File → Question-bank folder…**: pick the folder that holds your question banks (for the CFA, `question_bank`). The app restarts and loads every bank in it.
-2. **File → Study-notes folder…**: pick your Markdown notes (for the CFA, `md_materials`). They appear on **Materials**.
+1. **Question banks → Choose folder…**: pick the folder that holds your question banks (for the CFA, `question_bank`). The app restarts and loads every bank in it.
+2. **Materials → Choose folder…**: pick your Markdown notes (for the CFA, `md_materials`). They appear on **Materials**.
+
+Both folders are read in place, never copied, so an edit to a file shows up the next time the app opens.
 
 Already run the app on a server? Choose **File → Connect to a server…** and enter its address. Your questions, notes and progress then come from the server; sign in with its password. **File → Use this computer** switches back.
 
 **In a browser.** Open the server's address and sign in. The question folder is synced each time you open the app, so a new or fixed bank file shows up on its own.
 
-No folder? **Materials → Import Markdown → Choose a folder** imports a whole bank folder; **Choose a file** imports one file.
+A server with no question-bank folder? **Settings → Folders → Upload a folder…** imports a whole bank folder.
 
 ## Practice
 
@@ -31,7 +33,7 @@ The **Practice** page lists every topic. Each chapter row shows a progress bar: 
 
 Want the answer at once, without Submit? Turn on **Settings → Practice → Show the answer as soon as I pick a choice**.
 
-Text hard to read? **Settings → Display** sets the text size (A− / A+), theme, line width (Full to Narrow) and line spacing.
+Text hard to read? **Settings → Display** sets the text size (A− / A+), theme (Light, Sepia with a warm yellow page, Dark, Dark sepia, or Auto to follow the device), line width (Full to Narrow) and line spacing.
 
 **Previous** and **Next** stay at the top of the screen; the left and right arrow keys do the same. The numbers under the question jump to any question in the set and are coloured by result. **☆ Flag** stars a question for later. **← Back to Practice** is at the bottom.
 

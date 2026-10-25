@@ -1,7 +1,8 @@
 /* Colour tokens are named by role. Each holds light-dark(light value, dark value):
    the browser picks one from color-scheme, which follows the system setting unless
-   the theme button sets data-theme. Text tokens keep at least 4.5:1 contrast (WCAG
-   AA) against --bg, --surface and --surface-sunken in both themes. */
+   Settings → Theme sets data-theme. The sepia themes below replace the surface and
+   text tokens with warm, slightly yellow ones. Text tokens keep at least 4.5:1
+   contrast (WCAG AA) against --bg, --surface and --surface-sunken in every theme. */
 :root {
   color-scheme: light dark;
   /* Page and the raised cards on it. */
@@ -13,9 +14,9 @@
   --surface-sunken: light-dark(#eceee6, #242423);
   --border: light-dark(#dcdfd5, #2e2e2c);
   --border-strong: light-dark(#bfc7bb, #454542);
-  --text: light-dark(#2a3634, #dcdbd7);
-  --text-muted: light-dark(#56635e, #b4b3b0);
-  --text-subtle: light-dark(#5f6b67, #939189);
+  --text: light-dark(#222f2d, #e6e5e1);
+  --text-muted: light-dark(#505e59, #bbbab7);
+  --text-subtle: light-dark(#5f6b67, #979590);
   /* Deep, low-saturation slate teal, so nothing glows: filled buttons, links, the
      active tab. Dark mode fills a deep tone and writes light text on it. */
   --accent: light-dark(#365750, #37625b);
@@ -55,6 +56,36 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
+}
+/* Sepia: warm paper, like a printed book. Tokens not listed keep their light values. */
+:root[data-theme="sepia"] {
+  color-scheme: light;
+  --bg: #f3ead3;
+  --surface: #faf4e3;
+  --surface-field: #fffaec;
+  --surface-sunken: #ece2c8;
+  --border: #e0d4b4;
+  --border-strong: #c8b88f;
+  --text: #352d22;
+  --text-muted: #574c3b;
+  --text-subtle: #665a46;
+  --accent-soft: #e5e4d0;
+  --track: #e4d9bd;
+}
+/* Dark sepia: the dark theme with a faint yellow cast. Tokens not listed keep their dark values. */
+:root[data-theme="sepia-dark"] {
+  color-scheme: dark;
+  --bg: #1b1915;
+  --surface: #211e19;
+  --surface-field: #27241e;
+  --surface-sunken: #2c2822;
+  --border: #37322a;
+  --border-strong: #4f483c;
+  --text: #e4dccb;
+  --text-muted: #bcb3a2;
+  --text-subtle: #9c9381;
+  --accent-soft: #29332c;
+  --track: #332e27;
 }
 :root {
   font-family: var(--font-sans);
@@ -1238,4 +1269,37 @@ nav select {
   overflow: auto;
   white-space: pre-wrap;
   font-size: 0.85rem;
+}
+/* Settings → Folders: one row per folder, name and path left, buttons right. */
+.folder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border);
+}
+.folder-row:first-of-type {
+  border-top: 0;
+}
+.folder-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Long Windows or Linux paths break anywhere rather than widening the card. */
+.folder-name .muted {
+  overflow-wrap: anywhere;
+}
+.folder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.empty-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
 }

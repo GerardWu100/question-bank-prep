@@ -48,7 +48,7 @@ It runs on your ChatGPT subscription and on your own API keys at the same time: 
 
 ## Get started
 
-**Desktop app.** Download the installer from the [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest): `.AppImage` or `.deb` (Linux), `.dmg` (macOS), `.exe` (Windows). Open it, click **Create library**, then pick your folders in **File → Question-bank folder…** and **File → Study-notes folder…**. No password is needed. Already run a server? **File → Connect to a server…** uses its questions and progress instead. The installers are not signed: on macOS right-click → **Open**; on Windows **More info → Run anyway**.
+**Desktop app.** Download the installer from the [latest release](https://github.com/GerardWu100/question-bank-prep/releases/latest): `.AppImage` or `.deb` (Linux), `.dmg` (macOS), `.exe` (Windows). Open it, click **Create library**, then pick your two folders in **Settings → Folders**: **Question banks** and **Materials** (study notes). The app reads them in place, like the Docker mounts below. No password is needed. Already run a server? **File → Connect to a server…** uses its questions and progress instead. The installers are not signed: on macOS right-click → **Open**; on Windows **More info → Run anyway**.
 
 **Server with Docker** (reach it from any device, with a password). Save this as `docker-compose.yml`:
 

@@ -10,6 +10,12 @@ import React, {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { AIProviderSettings } from "./AIProviderSettings";
+import {
+  FolderHint,
+  FolderSettings,
+  loadDesktopFolders,
+  type DesktopFolders,
+} from "./FolderSettings";
 import { api, ApiError, operation } from "./api";
 // Markdown pulls in remark, KaTeX and its stylesheet: a separate chunk, loaded when a
 // page first shows Markdown, so the Practice home starts without it.
@@ -66,7 +72,15 @@ const DEFAULT_FONT_SIZE = 17;
 /** Reopening a material file retries its saved scroll offset this often, for up to 2 s. */
 const SCROLL_RESTORE_INTERVAL_MS = 100;
 const SCROLL_RESTORE_ATTEMPTS = 20;
-const THEMES = ["system", "light", "dark"] as const;
+/** Theme ID -> label in Settings. "system" follows the device's light or dark setting. */
+const THEMES = {
+  system: "Auto (device)",
+  light: "Light",
+  sepia: "Sepia",
+  dark: "Dark",
+  "sepia-dark": "Dark sepia",
+} as const;
+type Theme = keyof typeof THEMES;
 /**
  * Line width choices: label -> text column width in em (null = the whole window).
  * Inter averages about half an em per character, so 42em is about 75 characters a line.
@@ -340,34 +354,6 @@ const namedEntries = (entries: string[], meaning: string) =>
   entries.length
     ? `; ${entries.length} ${meaning}: ${entries.slice(0, IMPORT_SUMMARY_NAMES).join(", ")}${entries.length > IMPORT_SUMMARY_NAMES ? " …" : ""}`
     : "";
-/** Folder names that never hold a bank: version control and tool state. */
-const SKIPPED_IMPORT_FOLDERS = new Set([".git", "node_modules"]);
-/**
- * Read picked files into import entries, keeping only Markdown (README.md describes a
- * bank, so it is skipped). From a folder, `webkitRelativePath` is
- * "picked-folder/01-quant/qbank.md"; the picked folder's own name is dropped, so the
- * first remaining folder becomes the topic and the file name the source, as in a
- * configured question-bank folder.
- */
-async function readMarkdownFiles(list: FileList | null) {
-  const files = [...(list ?? [])].filter((file) => {
-    const parts = (file.webkitRelativePath || file.name).split("/");
-    return (
-      /\.(md|markdown)$/i.test(file.name) &&
-      file.name.toLowerCase() !== "readme.md" &&
-      !parts.some((part) => SKIPPED_IMPORT_FOLDERS.has(part))
-    );
-  });
-  const entries = await Promise.all(
-    files.map(async (file) => ({
-      path: file.webkitRelativePath
-        ? file.webkitRelativePath.split("/").slice(1).join("/")
-        : file.name,
-      content: await file.text(),
-    })),
-  );
-  return entries.sort((a, b) => a.path.localeCompare(b.path));
-}
 function App() {
   const [page, setPage] = useState<Page>("Practice"),
     [libraries, setLibraries] = useState<any[]>([]),
@@ -402,12 +388,7 @@ function App() {
     [answerOnClick, setAnswerOnClick] = useState(() =>
       loadPreference("answerOnClick", false),
     );
-  const [importPreview, setImportPreview] = useState<any>(null),
-    // Markdown files picked for import: one file, or every .md file in a folder.
-    [importFiles, setImportFiles] = useState<
-      { path: string; content: string }[]
-    >([]),
-    [chats, setChats] = useState<any[]>([]),
+  const [chats, setChats] = useState<any[]>([]),
     [chat, setChat] = useState<any>(null),
     [prompt, setPrompt] = useState(""),
     [notes, setNotes] = useState<any[]>([]),
@@ -417,11 +398,10 @@ function App() {
     [activeRun, setActiveRun] = useState<string | null>(null),
     [needsLogin, setNeedsLogin] = useState(false),
     [password, setPassword] = useState(""),
-    [identityMappings, setIdentityMappings] = useState<
-      Record<string, string | null>
-    >({}),
     [caseOpen, setCaseOpen] = useState(true),
     [materialRoot, setMaterialRoot] = useState(false),
+    // The desktop app's chosen folders; null in a browser or when it shows a server.
+    [desktopFolders, setDesktopFolders] = useState<DesktopFolders | null>(null),
     [readingFiles, setReadingFiles] = useState<string[] | null>([]),
     [readingPath, setReadingPath] = useState(""),
     // The open file, already split; the whole text is not kept a second time.
@@ -439,9 +419,10 @@ function App() {
     [openTopics, setOpenTopics] = useState<string[] | null>(() =>
       loadPreference<string[] | null>("openTopics", null),
     ),
-    [theme, setTheme] = useState<(typeof THEMES)[number]>(() =>
-      loadPreference("theme", "system"),
-    ),
+    [theme, setTheme] = useState<Theme>(() => {
+      const saved = loadPreference<string>("theme", "system");
+      return saved in THEMES ? (saved as Theme) : "system";
+    }),
     [pageWidth, setPageWidth] = useState<PageWidth>(() => {
       const saved = loadPreference<string>("pageWidth", "Full");
       return saved in PAGE_WIDTHS ? (saved as PageWidth) : "Full";
@@ -637,11 +618,8 @@ function App() {
           data.libraries[0].id,
       );
   };
-  const showImportPreview = (next: any) => {
-    setImportPreview(next);
-    setIdentityMappings({});
-  };
   useEffect(() => {
+    void loadDesktopFolders().then(setDesktopFolders);
     void run(async () => {
       const session = await api("/session");
       if (!session.authenticated) {
@@ -658,8 +636,12 @@ function App() {
       loadPreference<string | null>(`lastPractice:${library}`, null),
     );
     void run(async () => {
-      const { configured } = await api("/material-root");
+      const [{ configured }, reading] = await Promise.all([
+        api("/material-root"),
+        api("/reading"),
+      ]);
       setMaterialRoot(configured);
+      setReadingFiles(reading.configured ? reading.files : null);
       if (configured) await syncMaterialRoot();
       setLibrarySettings(await api(`${scope}/settings`));
       await refresh();
@@ -1621,11 +1603,17 @@ function App() {
                 );
               })}
               {overview.catalog && !overview.counts.total && (
-                <p className="muted">
-                  No questions yet. Choose a question-bank folder (desktop app:
-                  File → Question-bank folder; server: MATERIAL_ROOT), or import
-                  a Markdown bank on Materials.
-                </p>
+                <div className="empty-state">
+                  <p className="muted">
+                    No questions yet. Choose the folder that holds your question
+                    banks.
+                  </p>
+                  <FolderHint
+                    kind="questions"
+                    desktopFolders={desktopFolders}
+                    onOpenSettings={() => setPage("Settings")}
+                  />
+                </div>
               )}
               <details className="panel practice-custom">
                 <summary>Custom practice set</summary>
@@ -1956,10 +1944,17 @@ function App() {
           {library && page === "Materials" && (
             <>
               {readingFiles === null ? (
-                <p className="muted">
-                  Set READING_ROOT in .env to a folder of Markdown study
-                  material to read it here.
-                </p>
+                <div className="empty-state">
+                  <p className="muted">
+                    No materials yet. Choose the folder that holds your Markdown
+                    study notes.
+                  </p>
+                  <FolderHint
+                    kind="materials"
+                    desktopFolders={desktopFolders}
+                    onOpenSettings={() => setPage("Settings")}
+                  />
+                </div>
               ) : (
                 <div className="reader">
                   <aside className="reader-files">
@@ -2073,161 +2068,6 @@ function App() {
                     )}
                   </article>
                 </div>
-              )}
-              {!materialRoot && (
-                <section className="panel">
-                  <h2>Import Markdown</h2>
-                  <div className="chips">
-                    <label className="secondary file-button">
-                      Choose a folder
-                      <input
-                        type="file"
-                        multiple
-                        // Non-standard but supported by Chrome, Edge, Firefox, Safari and Electron.
-                        {...({ webkitdirectory: "" } as any)}
-                        onChange={(e) => {
-                          const input = e.target;
-                          void run(async () => {
-                            setImportFiles(
-                              await readMarkdownFiles(input.files),
-                            );
-                            input.value = "";
-                            showImportPreview(null);
-                          });
-                        }}
-                      />
-                    </label>
-                    <label className="secondary file-button">
-                      Choose a file
-                      <input
-                        type="file"
-                        accept=".md,.markdown,text/markdown"
-                        onChange={(e) => {
-                          const input = e.target;
-                          void run(async () => {
-                            setImportFiles(
-                              await readMarkdownFiles(input.files),
-                            );
-                            input.value = "";
-                            showImportPreview(null);
-                          });
-                        }}
-                      />
-                    </label>
-                  </div>
-                  {importFiles.length > 0 && (
-                    <p className="muted">
-                      {importFiles.length} Markdown file
-                      {importFiles.length === 1 ? "" : "s"}:{" "}
-                      {importFiles
-                        .slice(0, 8)
-                        .map((file) => file.path)
-                        .join(", ")}
-                      {importFiles.length > 8 ? " …" : ""}
-                    </p>
-                  )}
-                  <button
-                    disabled={busy || !importFiles.length}
-                    onClick={() =>
-                      void run(async () =>
-                        showImportPreview(
-                          await api(`${scope}/imports/preview`, {
-                            files: importFiles.map((file) => ({
-                              ...file,
-                              type: "questions",
-                            })),
-                          }),
-                        ),
-                      )
-                    }
-                  >
-                    Preview import
-                  </button>
-                  {importPreview && (
-                    <div className="import-result">
-                      <h3>
-                        {importPreview.counts?.questions || 0} questions found
-                      </h3>
-                      {importPreview.issues?.map(
-                        (issue: any, index: number) => (
-                          <p
-                            key={index}
-                            className={
-                              issue.severity === "error" ? "error" : "muted"
-                            }
-                          >
-                            {issue.path}:{issue.line} · {issue.message}
-                          </p>
-                        ),
-                      )}
-                      {importPreview.identityProposals
-                        ?.filter(
-                          (proposal: any) =>
-                            !proposal.automatic &&
-                            proposal.candidates.length > 0,
-                        )
-                        .map((proposal: any) => (
-                          <label key={proposal.key}>
-                            {proposal.title}: keep progress from an existing
-                            question?
-                            <select
-                              value={
-                                identityMappings[proposal.key] === null
-                                  ? "new"
-                                  : identityMappings[proposal.key] || ""
-                              }
-                              onChange={(event) => {
-                                const { [proposal.key]: _previous, ...rest } =
-                                  identityMappings;
-                                setIdentityMappings(
-                                  event.target.value === ""
-                                    ? rest
-                                    : {
-                                        ...rest,
-                                        [proposal.key]:
-                                          event.target.value === "new"
-                                            ? null
-                                            : event.target.value,
-                                      },
-                                );
-                              }}
-                            >
-                              <option value="">Automatic: new question</option>
-                              <option value="new">Create a new question</option>
-                              {proposal.candidates.map((candidate: any) => (
-                                <option
-                                  key={candidate.id}
-                                  value={candidate.id}
-                                  disabled={!candidate.choicesCompatible}
-                                >
-                                  {candidate.title}
-                                  {!candidate.choicesCompatible
-                                    ? " · choices changed"
-                                    : ""}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ))}
-                      <button
-                        disabled={busy || !importPreview.canCommit}
-                        onClick={() =>
-                          void run(async () => {
-                            await api(
-                              `${scope}/imports/${importPreview.id}/${importPreview.localRoot ? "root-commit" : "commit"}`,
-                              { acceptWarnings: true, identityMappings },
-                            );
-                            showImportPreview(null);
-                            setImportFiles([]);
-                            await refresh();
-                          })
-                        }
-                      >
-                        Confirm import
-                      </button>
-                    </div>
-                  )}
-                </section>
               )}
             </>
           )}
@@ -2549,6 +2389,16 @@ function App() {
           {library && page === "Settings" && (
             <>
               <h1>Settings</h1>
+              <FolderSettings
+                scope={scope}
+                busy={busy}
+                run={run}
+                refresh={refresh}
+                syncQuestions={syncMaterialRoot}
+                desktopFolders={desktopFolders}
+                questionsConfigured={materialRoot}
+                materialsConfigured={readingFiles !== null}
+              />
               <section className="panel">
                 <h2>Export</h2>
                 <div className="chips">
@@ -2633,22 +2483,17 @@ function App() {
                     A+
                   </button>
                   <span className="muted">Theme</span>
-                  <button
-                    className="secondary"
-                    aria-label={`Theme: ${theme}`}
-                    title="Switch theme: system, light, dark"
-                    onClick={() =>
-                      setTheme(
-                        THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length],
-                      )
-                    }
+                  <select
+                    aria-label="Theme"
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value as Theme)}
                   >
-                    {theme === "dark"
-                      ? "☾ Dark"
-                      : theme === "light"
-                        ? "☀ Light"
-                        : "◐ Auto"}
-                  </button>
+                    {Object.entries(THEMES).map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                   <span className="muted">Line width</span>
                   <select
                     aria-label="Line width"
@@ -2772,21 +2617,6 @@ function App() {
                     </label>
                   );
                 })()}
-              </section>
-              <section className="panel">
-                <h2>Configured material folder</h2>
-                <button
-                  disabled={busy || !materialRoot}
-                  onClick={() =>
-                    void run(async () => {
-                      await syncMaterialRoot();
-                      await refresh();
-                      setSaveStatus("Folder synced");
-                    })
-                  }
-                >
-                  Sync folder now
-                </button>
               </section>
             </>
           )}

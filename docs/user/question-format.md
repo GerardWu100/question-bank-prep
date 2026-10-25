@@ -107,7 +107,7 @@ Shared passage text...
 
 ## Images
 
-Link a picture relative to the bank file, for example `![Yield curve](assets/yield-curve.svg)` in `question_bank/06-fixed-income/others.md` points to `question_bank/06-fixed-income/assets/yield-curve.svg`. PNG, JPEG, GIF, WebP and SVG work, in a case passage, a question, a choice or a solution. The picture shows when the bank comes from the question-bank folder (the desktop app's **File → Question-bank folder…**, `MATERIAL_ROOT`, or the Docker `/question_bank` mount). A bank uploaded through **Import Markdown** has no folder, so its pictures show as their alt text. Keep only images in `assets/`: every `.md` file in the folder is read as a bank.
+Link a picture relative to the bank file, for example `![Yield curve](assets/yield-curve.svg)` in `question_bank/06-fixed-income/others.md` points to `question_bank/06-fixed-income/assets/yield-curve.svg`. PNG, JPEG, GIF, WebP and SVG work, in a case passage, a question, a choice or a solution. The picture shows when the bank comes from the question-bank folder (the desktop app's **Settings → Folders → Question banks**, `MATERIAL_ROOT`, or the Docker `/question_bank` mount). A bank uploaded through **Settings → Folders → Upload a folder…** has no folder, so its pictures show as their alt text. Keep only images in `assets/`: every `.md` file in the folder is read as a bank.
 
 ## Notes (reading material)
 

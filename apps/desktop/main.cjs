@@ -1,7 +1,7 @@
 // Desktop wrapper with two modes, chosen in the File menu:
 // - This computer (default): runs the study server inside Electron on a private loopback
 //   port, with no password; data lives in the app's user-data folder, and the
-//   question-bank and study-notes folders are chosen from the File menu.
+//   question-bank and materials folders are chosen in Settings → Folders or the File menu.
 // - Server: shows a hosted Question Bank Prep server (for example the Docker image), so
 //   questions, notes and progress come from it; sign in with the server's password.
 const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require("electron");
@@ -23,6 +23,17 @@ const EXTERNAL_LINK_PROTOCOLS = ["https:", "http:", "mailto:"];
 /** The only permission pages get: the Guide's Copy button writes to the clipboard. */
 const ALLOWED_PERMISSION = "clipboard-sanitized-write";
 const settingsPath = () => join(app.getPath("userData"), "desktop-settings.json");
+/**
+ * Folder kinds the page may pick -> desktop setting key and dialog title. The keys match
+ * the server's settings: materialRoot is MATERIAL_ROOT (question banks, synced into the
+ * library), readingRoot is READING_ROOT (materials, read-only), as in the Docker mounts.
+ */
+const FOLDERS = {
+  questions: { key: "materialRoot", title: "Choose the question-bank folder (Markdown banks, synced on open)" },
+  materials: { key: "readingRoot", title: "Choose the materials folder (Markdown study notes, read-only)" },
+};
+/** Origin of the local server's page, once it listens; folder calls are accepted only from it. */
+let localOrigin = "";
 
 /**
  * Desktop settings: `{ serverUrl?: string, materialRoot?: string, readingRoot?: string,
@@ -96,15 +107,47 @@ async function startServer() {
   // for example if another program took the port after the check above. Only then is the
   // URL loaded: a health check alone could be answered by another program on that port.
   await import(pathToFileURL(join(BUILD_DIRECTORY, "server.mjs")).href);
-  return `http://${LOOPBACK}:${port}`;
+  localOrigin = `http://${LOOPBACK}:${port}`;
+  return localOrigin;
 }
 
-/** Pick a folder for one setting, save it and restart so the server reads it. */
-async function chooseFolder(key, title) {
-  const { canceled, filePaths } = await dialog.showOpenDialog({ title, properties: ["openDirectory"] });
+/** Pick a folder of one kind ("questions" or "materials"), save it and restart so the server reads it. */
+async function chooseFolder(kind, parent) {
+  const { key, title } = FOLDERS[kind];
+  const options = { title, properties: ["openDirectory"] };
+  const { canceled, filePaths } = await (parent
+    ? dialog.showOpenDialog(parent, options)
+    : dialog.showOpenDialog(options));
   if (canceled || !filePaths[0]) return;
   saveAndRestart({ [key]: filePaths[0] });
 }
+
+/** Whether an IPC call comes from the local app page, so a hosted server's page cannot pick folders. */
+function fromLocalPage(event) {
+  if (readSettings().serverUrl || !localOrigin) return false;
+  try {
+    return new URL(event.senderFrame?.url ?? "").origin === localOrigin;
+  } catch {
+    return false;
+  }
+}
+/** The folder kind the page sent, or an error for anything else. */
+function folderKind(kind) {
+  if (!Object.hasOwn(FOLDERS, kind)) throw new Error("Unknown folder kind.");
+  return kind;
+}
+ipcMain.handle("folders", (event) => {
+  if (!fromLocalPage(event)) return null;
+  const settings = readSettings();
+  return { questions: settings.materialRoot ?? null, materials: settings.readingRoot ?? null };
+});
+ipcMain.handle("choose-folder", (event, kind) => {
+  if (!fromLocalPage(event)) return;
+  return chooseFolder(folderKind(kind), BrowserWindow.fromWebContents(event.sender) ?? undefined);
+});
+ipcMain.handle("forget-folder", (event, kind) => {
+  if (fromLocalPage(event)) saveAndRestart({ [FOLDERS[folderKind(kind)].key]: undefined });
+});
 
 /** Save a change to the settings and restart the app so it takes effect. */
 function saveAndRestart(change) {
@@ -176,12 +219,12 @@ function buildMenu(window) {
           {
             label: `Question-bank folder… ${settings.materialRoot ? `(${settings.materialRoot})` : "(none)"}`,
             enabled: local,
-            click: () => chooseFolder("materialRoot", "Choose the question-bank folder (Markdown banks, synced on open)"),
+            click: () => chooseFolder("questions", window),
           },
           {
-            label: `Study-notes folder… ${settings.readingRoot ? `(${settings.readingRoot})` : "(none)"}`,
+            label: `Materials folder… ${settings.readingRoot ? `(${settings.readingRoot})` : "(none)"}`,
             enabled: local,
-            click: () => chooseFolder("readingRoot", "Choose the study-notes folder (read-only Markdown)"),
+            click: () => chooseFolder("materials", window),
           },
           {
             label: "Forget both folders",
@@ -210,9 +253,17 @@ else {
     window?.focus();
   });
   app.whenReady().then(async () => {
-    window = new BrowserWindow({ width: 1280, height: 900, title: "Question Bank Prep", show: false });
-    buildMenu(window);
     const { serverUrl } = readSettings();
+    window = new BrowserWindow({
+      width: 1280,
+      height: 900,
+      title: "Question Bank Prep",
+      show: false,
+      // Local mode only: the bridge lets Settings → Folders pick folders. A hosted
+      // server's page never gets it (fromLocalPage also checks every call).
+      webPreferences: serverUrl ? {} : { preload: join(__dirname, "preload.cjs") },
+    });
+    buildMenu(window);
     let url = serverUrl;
     if (!url) {
       try {

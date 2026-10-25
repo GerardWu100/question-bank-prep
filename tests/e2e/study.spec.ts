@@ -19,13 +19,15 @@ test("import, submit, correct, annotate, and resume a frozen practice set", asyn
   // The library picker appears only when there is more than one library.
   const picker = page.getByLabel("Library", { exact: true });
   if (await picker.count()) await picker.selectOption(library.id);
-  await page.getByRole("button", { name: "Materials", exact: true }).click();
+  // Question banks and materials are separate folders, both in Settings → Folders.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("Set on the server")).toBeVisible();
   // A picked folder: the bank file in a topic subfolder, plus a README that is skipped.
   const folder = testInfo.outputPath("bank-folder");
   mkdirSync(join(folder, "01-arithmetic"), { recursive: true });
   writeFileSync(join(folder, "01-arithmetic", "drills.md"), material);
   writeFileSync(join(folder, "README.md"), "# About this bank\n");
-  await page.getByLabel("Choose a folder").setInputFiles(folder);
+  await page.getByLabel("Upload a folder…").setInputFiles(folder);
   await expect(page.getByText("1 Markdown file: 01-arithmetic/drills.md")).toBeVisible();
   await page
     .getByRole("button", { name: "Preview import", exact: true })

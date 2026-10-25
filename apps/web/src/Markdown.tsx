@@ -244,10 +244,10 @@ function MermaidDiagram({ code }: { code: string }) {
   useEffect(() => {
     let current = true;
     const root = document.documentElement;
-    const dark =
-      root.dataset.theme === "dark" ||
-      (!root.dataset.theme &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches);
+    // "dark" and "sepia-dark" are dark; no theme set follows the device.
+    const dark = root.dataset.theme
+      ? root.dataset.theme.endsWith("dark")
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
     import("mermaid")
       .then(async ({ default: mermaid }) => {
         mermaid.initialize({
