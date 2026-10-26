@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
-import { extname, join, relative, resolve } from "node:path";
+import { extname, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
+import { toPosixPath } from "./material-files.js";
 import { AppError } from "./store.js";
 
 /** Image types served from the study folders, by extension. SVG can carry scripts, so
@@ -45,7 +46,7 @@ async function readingPath(
         : "Only images can be read.",
     );
   let cursor = base;
-  for (const part of inside.split("/")) {
+  for (const part of inside.split(sep)) {
     cursor = join(cursor, part);
     if ((await lstat(cursor)).isSymbolicLink())
       throw new AppError(400, "INVALID_PATH", "Symlinks are not followed.");
@@ -66,7 +67,7 @@ export async function listReadingFiles(root: string): Promise<string[]> {
       const target = join(directory, entry.name);
       if (entry.isDirectory()) await visit(target);
       else if (entry.isFile() && entry.name.endsWith(".md"))
-        files.push(relative(base, target));
+        files.push(toPosixPath(relative(base, target)));
     }
   };
   await visit(base);

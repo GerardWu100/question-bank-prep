@@ -10,7 +10,7 @@ import {
   open,
   unlink,
 } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import {
   hash,
   MAX_MATERIAL_BYTES,
@@ -19,6 +19,9 @@ import {
 import { AppError } from "./store.js";
 
 const locks = new Set<string>();
+
+/** Turn an OS path ("a\b.md" on Windows) into the "/"-separated form the app stores and shows. */
+export const toPosixPath = (path: string): string => path.split(sep).join("/");
 
 /** Resolve an existing Markdown file beneath an explicitly configured root; symlinks are rejected. */
 export async function materialPath(
@@ -32,7 +35,7 @@ export async function materialPath(
   if (relative(base, target).startsWith(".."))
     throw new AppError(400, "INVALID_PATH", "Material path escapes root.");
   let cursor = base;
-  for (const part of relative(base, target).split("/")) {
+  for (const part of relative(base, target).split(sep)) {
     cursor = join(cursor, part);
     if ((await lstat(cursor)).isSymbolicLink())
       throw new AppError(
@@ -65,7 +68,7 @@ export async function scanRoot(
       const target = join(directory, entry.name);
       if (entry.isDirectory()) await visit(target);
       else if (entry.isFile() && entry.name.endsWith(".md")) {
-        const path = relative(root, target);
+        const path = toPosixPath(relative(root, target));
         const safe = await materialPath(root, path);
         files.push({
           path,
