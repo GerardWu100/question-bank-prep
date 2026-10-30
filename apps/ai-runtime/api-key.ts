@@ -5,14 +5,17 @@ import { dirname } from 'node:path';
 import type { Model } from '@earendil-works/pi-ai';
 import { streamSimple as anthropicStream } from '@earendil-works/pi-ai/api/anthropic-messages';
 import { stream as completionsStream } from '@earendil-works/pi-ai/api/openai-completions';
+import { stream as responsesStream } from '@earendil-works/pi-ai/api/openai-responses';
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
-import { DEFAULT_CODEX_MODELS, defaultCodexAuthFile, defaultEffort, MAX_PROMPT_LENGTH, modelEfforts, streamWithTools, SubscriptionProvider, type AccountStatus, type AIEvent, type AIRequest, type ModelCall, type ModelStatus, type StudyProvider } from './index.js';
+import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
+import { catalogWithExtras, DEFAULT_CODEX_MODELS, defaultCodexAuthFile, defaultEffort, MAX_PROMPT_LENGTH, modelEfforts, streamWithTools, SubscriptionProvider, type AccountStatus, type AIEvent, type AIRequest, type ModelCall, type ModelStatus, type StudyProvider } from './index.js';
 import type { ModelUsageLimit } from './usage-limit.js';
 
 /**
  * Kinds of AI connection: the ChatGPT subscription (a Codex-format auth.json), or an API
- * key for an endpoint. An API endpoint on api.anthropic.com uses Anthropic's Messages API;
- * every other endpoint uses OpenAI-compatible Chat Completions.
+ * key for an endpoint. An API endpoint on api.anthropic.com uses Anthropic's Messages API,
+ * one on api.openai.com OpenAI's Responses API (both with thinking levels for catalog
+ * models); every other endpoint uses OpenAI-compatible Chat Completions.
  */
 export const CONNECTION_KINDS = ['codex', 'api'] as const;
 export type ConnectionKind = (typeof CONNECTION_KINDS)[number];
@@ -34,8 +37,21 @@ export interface PublicAISettings { connections: PublicConnection[] }
 /** One model offered by an endpoint's model list; `free` and `tools` only when the endpoint reports them (OpenRouter does). */
 export interface RemoteModel { id: string; name: string; free?: boolean; tools?: boolean }
 
-const CODEX_CONNECTION: Connection = { id: 'codex', kind: 'codex', baseUrl: '', apiKey: '', models: DEFAULT_CODEX_MODELS };
-const DEFAULT_SETTINGS: AISettings = { connections: [CODEX_CONNECTION] };
+export const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
+export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
+/** Models a new Anthropic or OpenAI connection offers, in menu order (the first is its backup model). */
+export const DEFAULT_ANTHROPIC_MODELS = ['claude-sonnet-5-5', 'claude-haiku-5-5'];
+export const DEFAULT_OPENAI_MODELS = ['gpt-6.1-sol', 'gpt-6.1-terra'];
+/**
+ * Connections before the user saves any, in fallback order: the ChatGPT subscription (no
+ * per-token bill), then an Anthropic key, then an OpenAI key. The two API connections stay
+ * unavailable, and are skipped, until a key is saved for them in Settings → AI provider.
+ */
+const DEFAULT_SETTINGS: AISettings = { connections: [
+  { id: 'codex', kind: 'codex', baseUrl: '', apiKey: '', models: DEFAULT_CODEX_MODELS },
+  { id: 'anthropic', kind: 'api', baseUrl: ANTHROPIC_BASE_URL, apiKey: '', models: DEFAULT_ANTHROPIC_MODELS },
+  { id: 'openai', kind: 'api', baseUrl: OPENAI_BASE_URL, apiKey: '', models: DEFAULT_OPENAI_MODELS },
+] };
 const MAX_CONNECTIONS = 8;
 const MAX_CONNECTION_ID_LENGTH = 64;
 const MAX_MODELS = 50;
@@ -62,6 +78,8 @@ const IPV4_MAPPED_DOTTED = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i;
 const IPV4_MAPPED_HEX = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i;
 /** Hosts served through Anthropic's Messages API instead of Chat Completions. */
 const ANTHROPIC_HOSTS = ['api.anthropic.com'];
+/** Hosts served through OpenAI's Responses API, which carries reasoning, instead of Chat Completions. */
+const OPENAI_HOSTS = ['api.openai.com'];
 /** Anthropic API version header for the model list (the Messages transport sets its own). */
 const ANTHROPIC_API_VERSION = '2023-06-01';
 /**
@@ -74,6 +92,7 @@ const FALLBACK_CODES = new Set(['setup_required', 'provider_error', 'interrupted
 const hostOf = (baseUrl: string) => { try { return new URL(baseUrl).hostname; } catch { return ''; } };
 const isLocalEndpoint = (baseUrl: string) => LOCAL_HOSTS.includes(hostOf(baseUrl));
 const isAnthropicEndpoint = (baseUrl: string) => ANTHROPIC_HOSTS.includes(hostOf(baseUrl));
+const isOpenAIEndpoint = (baseUrl: string) => OPENAI_HOSTS.includes(hostOf(baseUrl));
 
 /**
  * Whether a URL host name or resolved address (IPv6 with or without brackets) is link-local
@@ -189,21 +208,29 @@ export class AISettingsFile {
 
 /**
  * Tutor replies through one API-key connection: Anthropic's Messages API on
- * api.anthropic.com, else any OpenAI-compatible Chat Completions endpoint (OpenRouter,
- * OpenAI, DeepSeek, Groq, a local Ollama, ...).
+ * api.anthropic.com, OpenAI's Responses API on api.openai.com, else any OpenAI-compatible
+ * Chat Completions endpoint (OpenRouter, DeepSeek, Groq, a local Ollama, ...).
  *
- * Anthropic models pi-ai knows get its catalog entry, so their thinking levels apply.
- * Chat Completions models are sent without reasoning parameters, so models that do not
- * reason still work; the system prompt goes as a `system` message, which every
- * compatible server accepts.
+ * Anthropic and OpenAI models pi-ai knows (plus EXTRA_MODELS) get their catalog entry, so
+ * their thinking levels apply and a reasoning summary streams. Other models are sent without
+ * reasoning parameters, so models that do not reason still work; the system prompt goes as
+ * a `system` message, which every compatible server accepts.
+ *
+ * Prompt caching: Anthropic marks the prompt prefix for caching by itself; the Responses
+ * API gets the request's `cacheKey` as `prompt_cache_key`.
  */
 export class ApiKeyProvider implements StudyProvider {
   constructor(private readonly connection: Connection, private readonly usageLimit?: ModelUsageLimit) {}
 
   /** pi-ai model for an ID on this connection. */
-  private model(id: string): Model<'anthropic-messages'> | Model<'openai-completions'> {
+  private model(id: string): Model<'anthropic-messages'> | Model<'openai-responses'> | Model<'openai-completions'> {
     const { baseUrl } = this.connection;
     const common = { id, name: id, baseUrl, input: ['text' as const], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: ASSUMED_CONTEXT_WINDOW, maxTokens: ASSUMED_MAX_OUTPUT_TOKENS };
+    if (isOpenAIEndpoint(baseUrl)) {
+      // An OpenAI model the catalog lacks falls through to plain Chat Completions below.
+      const known = catalogWithExtras('openai', openaiProvider().getModels()).get(id) as Model<'openai-responses'> | undefined;
+      if (known) return { ...known, baseUrl };
+    }
     if (isAnthropicEndpoint(baseUrl)) {
       const known = anthropicProvider().getModels().find(model => model.id === id) as Model<'anthropic-messages'> | undefined;
       return known ? { ...known, baseUrl } : { ...common, api: 'anthropic-messages', provider: 'anthropic', reasoning: false };
@@ -235,7 +262,9 @@ export class ApiKeyProvider implements StudyProvider {
     // A local server without a key still needs a non-empty bearer value for the OpenAI client.
     const call: ModelCall = model.api === 'anthropic-messages'
       ? (context, signal) => anthropicStream(model as Model<'anthropic-messages'>, context, { apiKey, signal, fetch: guardedFetch, ...(effort ? { reasoning: effort } : {}) })
-      : (context, signal) => completionsStream(model as Model<'openai-completions'>, context, { apiKey: apiKey || 'local', signal, fetch: guardedFetch });
+      : model.api === 'openai-responses'
+        ? (context, signal) => responsesStream(model as Model<'openai-responses'>, context, { apiKey, signal, fetch: guardedFetch, ...(request.cacheKey ? { sessionId: request.cacheKey } : {}), ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) })
+        : (context, signal) => completionsStream(model as Model<'openai-completions'>, context, { apiKey: apiKey || 'local', signal, fetch: guardedFetch });
     // Provider errors (rate limits, "model does not support tools", ...) are shown, with the key removed.
     const failureMessage = (detail: string | undefined) => detail
       ? `API request failed: ${(apiKey ? detail.replaceAll(apiKey, '[key]') : detail).slice(0, PROVIDER_ERROR_CHARACTERS)}`

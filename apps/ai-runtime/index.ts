@@ -18,10 +18,16 @@ const TOOL_RESULT_CHARACTERS = 24_000;
 export const THINKING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
 export const REQUEST_TIMEOUT_MS = 120_000;
-export type AIEvent = { type: 'text'; text: string } | { type: 'thinking'; text: string } | { type: 'done'; model: string; provider: string } | { type: 'error'; code: string; message: string };
+/**
+ * Tokens of one reply, summed over its model calls (tool rounds included). `input` excludes
+ * cached prompt tokens, so the prompt size is input + cacheRead. `reasoning` is part of
+ * `output` and counted only where the provider reports it.
+ */
+export interface ReplyUsage { calls: number; input: number; cacheRead: number; cacheWrite: number; output: number; reasoning: number }
+export type AIEvent = { type: 'text'; text: string } | { type: 'thinking'; text: string } | { type: 'done'; model: string; provider: string; usage?: ReplyUsage } | { type: 'error'; code: string; message: string };
 export interface ModelStatus { id: string; name: string; enabled: boolean; reason?: string; efforts: ThinkingEffort[]; defaultEffort?: ThinkingEffort }
 export interface AccountStatus { available: boolean; provider: string; route: string; reason?: string; models: ModelStatus[] }
-export interface AIRequest { model: string; effort?: string; prompt: string; systemPrompt?: string; signal?: AbortSignal; history?: { role: 'user' | 'assistant'; content: string }[]; tools?: Tool[]; executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown> }
+export interface AIRequest { model: string; effort?: string; prompt: string; cacheKey?: string; systemPrompt?: string; signal?: AbortSignal; history?: { role: 'user' | 'assistant'; content: string }[]; tools?: Tool[]; executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown> }
 export interface StudyProvider { status(): Promise<AccountStatus>; models(): Promise<ModelStatus[]>; stream(request: AIRequest): AsyncGenerator<AIEvent> }
 
 /** One model call: the transport's event stream for this (normalized) context. */
@@ -52,11 +58,12 @@ export async function* streamWithTools(
     const history = (request.history ?? []).map(message => ({ role: 'user' as const, content: `Prior ${message.role} message (conversation data):\n${message.content}`, timestamp: Date.now() }));
     const context: Context = { systemPrompt: request.systemPrompt, messages: [...history, { role: 'user', content: request.prompt, timestamp: Date.now() }], tools: request.tools };
     let length = 0;
+    const usage: ReplyUsage = { calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 };
     for (let step = 0; step < MAX_MODEL_STEPS; step++) {
       let terminal = false;
       let continueTools = false;
-      const usage = usageLimit?.take();
-      if (usage && !usage.allowed) { yield { type: 'error', code: 'usage_limit', message: `AI usage limit reached: ${usage.limit} model requests per ${usage.window}. Try again after ${usage.retryAt.toLocaleString()}.` }; return; }
+      const slot = usageLimit?.take();
+      if (slot && !slot.allowed) { yield { type: 'error', code: 'usage_limit', message: `AI usage limit reached: ${slot.limit} model requests per ${slot.window}. Try again after ${slot.retryAt.toLocaleString()}.` }; return; }
       for await (const event of call(normalizeContext(context), controller.signal)) {
         if (event.type === 'text_delta') {
           length += event.delta.length;
@@ -70,6 +77,10 @@ export async function* streamWithTools(
           return;
         } else if (event.type === 'done') {
           terminal = true;
+          // Every pi-ai transport reports usage; a missing record only leaves the counts short.
+          const spent = event.message.usage;
+          usage.calls += 1;
+          if (spent) { usage.input += spent.input; usage.cacheRead += spent.cacheRead; usage.cacheWrite += spent.cacheWrite; usage.output += spent.output; usage.reasoning += spent.reasoning ?? 0; }
           if (event.reason === 'toolUse' && request.executeTool) {
             context.messages.push(event.message);
             // Every call in the assistant message gets a result, or providers that pair calls
@@ -82,7 +93,7 @@ export async function* streamWithTools(
             }
             continueTools = true;
           } else if (event.reason !== 'stop') { yield { type: 'error', code: 'incomplete', message: 'Provider did not finish a complete reply.' }; return; }
-          else { yield { type: 'done', ...done }; return; }
+          else { yield { type: 'done', ...done, usage }; return; }
         }
       }
       if (!terminal) { yield { type: 'error', code: 'interrupted', message: 'Provider stream ended before completion.' }; return; }
@@ -103,7 +114,28 @@ export function defaultCodexAuthFile(): string {
 }
 
 /** Codex models offered when the connection lists none, in menu order. */
-export const DEFAULT_CODEX_MODELS = ['gpt-6.1-sol', 'gpt-6-luna'];
+export const DEFAULT_CODEX_MODELS = ['gpt-6.1-sol', 'gpt-6.1-terra'];
+
+/**
+ * Models newer than the pinned pi-ai catalog: `id` is a copy of catalog model `basedOn` of
+ * the same provider (API, endpoint, thinking levels, limits) with its id replaced. When a
+ * pi-ai upgrade lists `id` itself, the catalog entry wins and the entry here can go.
+ * gpt-6.1-terra (OpenAI, October 2026) is not in pi-ai 1.4.0; verified live as a gpt-6.1-sol copy.
+ */
+export const EXTRA_MODELS: { provider: string; id: string; basedOn: string }[] = [
+  { provider: 'openai-codex', id: 'gpt-6.1-terra', basedOn: 'gpt-6.1-sol' },
+  { provider: 'openai', id: 'gpt-6.1-terra', basedOn: 'gpt-6.1-sol' },
+];
+
+/** A provider's pinned catalog plus its EXTRA_MODELS copies, keyed by model id. */
+export function catalogWithExtras<T extends Model<any>>(provider: string, catalog: readonly T[]): Map<string, T> {
+  const models = new Map(catalog.map(model => [model.id, model]));
+  for (const extra of EXTRA_MODELS) {
+    const base = models.get(extra.basedOn);
+    if (extra.provider === provider && base && !models.has(extra.id)) models.set(extra.id, { ...base, id: extra.id, name: extra.id });
+  }
+  return models;
+}
 /** Effort sent when the request names none the model supports. */
 const PREFERRED_DEFAULT_EFFORT: ThinkingEffort = 'medium';
 /** A borrowed (Codex CLI) token closer than this to expiry counts as expired: this app cannot refresh it. */
@@ -158,7 +190,7 @@ export class SubscriptionProvider implements StudyProvider {
 
   async status(): Promise<AccountStatus> {
     const reason = await this.signInProblem(new CodexAuthFileStore(this.authFile));
-    const catalog = new Map(openaiCodexProvider().getModels().map(model => [model.id, model]));
+    const catalog = catalogWithExtras(CODEX_PROVIDER_ID, openaiCodexProvider().getModels());
     const models = this.modelIds().map(id => {
       const model = catalog.get(id);
       const efforts = model ? modelEfforts(model) : [];
@@ -175,13 +207,16 @@ export class SubscriptionProvider implements StudyProvider {
     const account = await this.status();
     const status = account.models.find(model => model.id === request.model && model.enabled);
     if (!status) { yield { type: 'error', code: 'setup_required', message: account.reason ?? `Model ${request.model} is not offered on the ChatGPT subscription.` }; return; }
-    const model = openaiCodexProvider().getModels().find(model => model.id === request.model)!;
+    const model = catalogWithExtras(CODEX_PROVIDER_ID, openaiCodexProvider().getModels()).get(request.model)!;
     // Always send a level: without one pi-ai's Codex transport switches reasoning off. A
     // summary is requested ('auto') so the UI can show the reasoning; short reasoning may return none.
     const effort = status.efforts.find(level => level === request.effort) ?? status.defaultEffort;
     let access: string;
     try { access = await this.accessToken(); } catch (error) { yield { type: 'error', code: 'setup_required', message: (error as Error).message }; return; }
-    const call: ModelCall = (context, signal) => codexStream(model, context, { apiKey: access, signal, transport: 'sse', ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) });
+    // SSE, not the WebSocket transport: with a session id the WebSocket stays cached and
+    // open after the reply. The session id becomes Codex's prompt_cache_key, so tool rounds
+    // and later turns of one chat reuse the cached prefix (system prompt, tools, history).
+    const call: ModelCall = (context, signal) => codexStream(model, context, { apiKey: access, signal, transport: 'sse', ...(request.cacheKey ? { sessionId: request.cacheKey } : {}), ...(effort ? { reasoningEffort: effort, reasoningSummary: 'auto' as const } : {}) });
     yield* streamWithTools(request, call, { model: model.id, provider: model.provider }, this.usageLimit, () => 'Subscription request failed. Check the ChatGPT sign-in and account availability.');
   }
 }

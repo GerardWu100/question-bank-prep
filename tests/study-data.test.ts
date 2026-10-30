@@ -70,7 +70,7 @@ describe("AI provider settings", () => {
       const settingsPath = join(directory, "ai-settings.json");
       const provider = new ConfigurableProvider(new AISettingsFile(settingsPath), join(directory, "auth.json"));
       const { app } = await buildApp({ provider });
-      expect((await app.inject({ url: "/api/ai-settings" })).json()).toMatchObject({ connections: [{ id: "codex", kind: "codex", models: ["gpt-6.1-sol", "gpt-6-luna"] }] });
+      expect((await app.inject({ url: "/api/ai-settings" })).json()).toMatchObject({ connections: [{ id: "codex", kind: "codex", models: ["gpt-6.1-sol", "gpt-6.1-terra"] }, { id: "anthropic", kind: "api", apiKeySaved: false }, { id: "openai", kind: "api", apiKeySaved: false }] });
       const saved = await app.inject({ method: "PUT", url: "/api/ai-settings", payload: { connections: [
         { id: "anthropic", kind: "api", baseUrl: "https://api.anthropic.com/", apiKey: "sk-test-value-1234", models: ["claude-sonnet-5-5", "claude-sonnet-5-5"] },
         { id: "codex", kind: "codex", models: [] },
@@ -78,14 +78,14 @@ describe("AI provider settings", () => {
       expect(saved.body).not.toContain("sk-test");
       expect(saved.json()).toMatchObject({ connections: [
         { id: "anthropic", baseUrl: "https://api.anthropic.com", models: ["claude-sonnet-5-5"], apiKeySaved: true, apiKeyEnding: "1234" },
-        { id: "codex", models: ["gpt-6.1-sol", "gpt-6-luna"] },
+        { id: "codex", models: ["gpt-6.1-sol", "gpt-6.1-terra"] },
       ] });
       expect(statSync(settingsPath).mode & 0o777).toBe(0o600);
       expect(JSON.parse(readFileSync(settingsPath, "utf8")).connections[0].apiKey).toBe("sk-test-value-1234");
       // The model menu lists every connection's models; the Codex ones are off without a sign-in.
       const models = (await app.inject({ url: "/api/models" })).json();
       expect(models).toMatchObject({ available: true, route: "api.anthropic.com → ChatGPT subscription" });
-      expect(models.models.map((m: any) => [m.id, m.enabled])).toEqual([["claude-sonnet-5-5", true], ["gpt-6.1-sol", false], ["gpt-6-luna", false]]);
+      expect(models.models.map((m: any) => [m.id, m.enabled])).toEqual([["claude-sonnet-5-5", true], ["gpt-6.1-sol", false], ["gpt-6.1-terra", false]]);
       expect(models.models[0].name).toBe("claude-sonnet-5-5 · api.anthropic.com");
       expect(models.models[0].efforts).toContain("high");
       // A blank key keeps the saved key; reordering keeps it too.
@@ -119,7 +119,7 @@ describe("AI provider settings", () => {
       const events: any[] = [];
       for await (const event of provider.stream({ model: "gpt-6.1-sol", prompt: "hi" })) events.push(event);
       // No ChatGPT sign-in and a failing endpoint: the third connection answers, and `done` names it.
-      expect(events).toEqual([{ type: "text", text: "Hello" }, { type: "done", model: "local-model", provider: "127.0.0.1:" + base.split(":")[2] }]);
+      expect(events).toMatchObject([{ type: "text", text: "Hello" }, { type: "done", model: "local-model", provider: "127.0.0.1:" + base.split(":")[2] }]);
       settings.update({ connections: [{ id: "broken", kind: "api", baseUrl: `${base}/broken`, models: ["broken-model"] }] });
       const failed: any[] = [];
       for await (const event of provider.stream({ model: "broken-model", prompt: "hi" })) failed.push(event);

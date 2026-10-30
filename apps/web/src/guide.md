@@ -73,6 +73,9 @@ It only sends the current question or section, the recent messages of that chat,
 
 - **ChatGPT subscription (Codex login)**: uses your existing ChatGPT plan through the Codex app on this computer. Nothing to pay per message.
 - **Anthropic key**: click **+ Anthropic key**, paste your key from [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys), then **Save**; the Claude models are filled in.
+- **OpenAI key**: click **+ OpenAI key**, paste your key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys), then **Save**; the GPT models are filled in and can reason.
+
+A new install lists all three in that order (subscription, Anthropic, OpenAI); one without a saved key is skipped. Remove the ones you do not use.
 - **Other API key**: use your own key. Free option: make a key at [openrouter.ai/keys](https://openrouter.ai/keys), choose **+ Other API key**, keep the base URL `https://openrouter.ai/api/v1`, paste the key, click **Browse the endpoint's models**, type `free`, click `openrouter/free`, then **Save**. Free models are sometimes busy; just try again.
 
 Then pick the model in **Settings → AI model**. The app caps AI use at 30 requests an hour and 150 a day, so a mistake cannot run up a bill.

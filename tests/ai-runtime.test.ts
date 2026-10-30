@@ -57,7 +57,7 @@ describe("duplicate model IDs across connections", () => {
     expect(status.models).toMatchObject([{ id: CATALOG_MODEL, enabled: true, name: `${CATALOG_MODEL} · ${local.host}`, efforts: [] }]);
     expect(status.models[0].defaultEffort).toBeUndefined();
     const events = await collect(ai.stream({ model: CATALOG_MODEL, prompt: "hi" }));
-    expect(events.at(-1)).toEqual({ type: "done", model: CATALOG_MODEL, provider: local.host });
+    expect(events.at(-1)).toMatchObject({ type: "done", model: CATALOG_MODEL, provider: local.host });
     expect(local.paths).toEqual(["/second/chat/completions"]);
   });
 
@@ -71,7 +71,7 @@ describe("duplicate model IDs across connections", () => {
     ]);
     expect((await ai.status()).models).toMatchObject([{ id: "same-model", enabled: true, name: `same-model · ${first.host}` }]);
     const events = await collect(ai.stream({ model: "same-model", prompt: "hi" }));
-    expect(events.at(-1)).toEqual({ type: "done", model: "same-model", provider: first.host });
+    expect(events.at(-1)).toMatchObject({ type: "done", model: "same-model", provider: first.host });
     expect(first.paths).toEqual(["/first/chat/completions"]);
     expect(second.paths).toEqual([]);
     // Thinking levels follow the owner too: an enabled Anthropic listing first keeps its levels (status only; no request is sent).
@@ -124,7 +124,7 @@ describe("tool-call cap", () => {
       { model: "m", prompt: "hi", executeTool: async (_name, args) => { executed.push(args.index); return { ok: args.index }; } },
       model.call, { model: "m", provider: "test" }, undefined, () => "failed",
     ));
-    expect(events.at(-1)).toEqual({ type: "done", model: "m", provider: "test" });
+    expect(events.at(-1)).toMatchObject({ type: "done", model: "m", provider: "test" });
     expect(executed).toEqual(Array.from({ length: Math.min(count, TOOL_CALL_CAP) }, (_, index) => index));
     expect(model.requests).toHaveLength(count ? 2 : 1);
     if (!count) return;
@@ -222,5 +222,42 @@ describe("API base URL destinations", () => {
       expect(events).toMatchObject([{ type: "error", code: "provider_error" }]);
       expect(paths).toEqual(["/v1/models", "/v1/chat/completions"]);
     } finally { server.close(); }
+  });
+});
+
+describe("default connections and model slots", () => {
+  const cleanup: (() => void)[] = [];
+  afterEach(() => { for (const step of cleanup.splice(0)) step(); });
+  function settingsFile() {
+    const directory = mkdtempSync(join(tmpdir(), "study-ai-defaults-"));
+    cleanup.push(() => rmSync(directory, { recursive: true }));
+    return { directory, settings: new AISettingsFile(join(directory, "ai-settings.json")) };
+  }
+
+  it("starts with the subscription, then an Anthropic key, then an OpenAI key", () => {
+    const { settings } = settingsFile();
+    expect(settings.read().connections.map(({ id, kind, baseUrl, models }) => ({ id, kind, baseUrl, models }))).toEqual([
+      { id: "codex", kind: "codex", baseUrl: "", models: ["gpt-6.1-sol", "gpt-6.1-terra"] },
+      { id: "anthropic", kind: "api", baseUrl: "https://api.anthropic.com", models: ["claude-sonnet-5-5", "claude-haiku-5-5"] },
+      { id: "openai", kind: "api", baseUrl: "https://api.openai.com/v1", models: ["gpt-6.1-sol", "gpt-6.1-terra"] },
+    ]);
+  });
+
+  it("skips API connections until a key is saved, and names the missing key", async () => {
+    const { directory, settings } = settingsFile();
+    const status = await new ConfigurableProvider(settings, join(directory, "missing-auth.json")).status();
+    expect(status.available).toBe(false);
+    expect(status.reason).toContain("Save an API key for api.anthropic.com");
+    expect(status.reason).toContain("Save an API key for api.openai.com");
+  });
+
+  it("gives catalog models on the OpenAI and Anthropic APIs thinking levels, Terra included", async () => {
+    const openai = await new ApiKeyProvider({ id: "o", kind: "api", baseUrl: "https://api.openai.com/v1", apiKey: "k", models: ["gpt-6.1-terra", "unknown-model"] }).models();
+    expect(openai[0].efforts).toContain("medium");
+    expect(openai[0].defaultEffort).toBe("medium");
+    // A model the catalog does not know goes through Chat Completions without reasoning.
+    expect(openai[1].efforts).toEqual([]);
+    const anthropic = await new ApiKeyProvider({ id: "a", kind: "api", baseUrl: "https://api.anthropic.com", apiKey: "k", models: ["claude-haiku-5-5"] }).models();
+    expect(anthropic[0].efforts).toContain("low");
   });
 });

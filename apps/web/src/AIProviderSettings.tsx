@@ -4,13 +4,17 @@ import { api, randomId } from "./api";
 /** Anthropic's Messages API; the server picks that transport for this host. */
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 /** Models a new Anthropic connection starts with (the first is its backup model). */
-const ANTHROPIC_DEFAULT_MODELS = ["claude-sonnet-5-5", "claude-opus-5-5"];
+const ANTHROPIC_DEFAULT_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5"];
+/** OpenAI's own API; the server uses its Responses API, with reasoning, for this host. */
+const OPENAI_BASE_URL = "https://api.openai.com/v1";
+/** Models a new OpenAI connection starts with (the first is its backup model). */
+const OPENAI_DEFAULT_MODELS = ["gpt-6.1-sol", "gpt-6.1-terra"];
 /** Every Anthropic API key starts with this, so a pasted one can pick its endpoint. */
 const ANTHROPIC_KEY_PREFIX = "sk-ant-";
 /** Common endpoints offered as suggestions for an API connection's base URL. */
 const ENDPOINT_PRESETS = [
   { label: "Anthropic", url: ANTHROPIC_BASE_URL },
-  { label: "OpenAI", url: "https://api.openai.com/v1" },
+  { label: "OpenAI", url: OPENAI_BASE_URL },
   { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
   { label: "DeepSeek", url: "https://api.deepseek.com/v1" },
   { label: "Groq", url: "https://api.groq.com/openai/v1" },
@@ -120,7 +124,7 @@ export function AIProviderSettings({ onSaved }: { onSaved: () => void }) {
     [next[index], next[index + step]] = [next[index + step], next[index]];
     setDrafts(next);
   };
-  const add = (kind: Draft["kind"], provider?: "anthropic") =>
+  const add = (kind: Draft["kind"], provider?: "anthropic" | "openai") =>
     setDrafts([
       ...drafts,
       {
@@ -129,10 +133,17 @@ export function AIProviderSettings({ onSaved }: { onSaved: () => void }) {
         baseUrl:
           provider === "anthropic"
             ? ANTHROPIC_BASE_URL
-            : kind === "api"
-              ? DEFAULT_API_BASE_URL
+            : provider === "openai"
+              ? OPENAI_BASE_URL
+              : kind === "api"
+                ? DEFAULT_API_BASE_URL
+                : "",
+        models:
+          provider === "anthropic"
+            ? ANTHROPIC_DEFAULT_MODELS.join("\n")
+            : provider === "openai"
+              ? OPENAI_DEFAULT_MODELS.join("\n")
               : "",
-        models: provider === "anthropic" ? ANTHROPIC_DEFAULT_MODELS.join("\n") : "",
         apiKey: "",
         removeKey: false,
         apiKeySaved: false,
@@ -312,6 +323,13 @@ export function AIProviderSettings({ onSaved }: { onSaved: () => void }) {
           onClick={() => add("api", "anthropic")}
         >
           + Anthropic key
+        </button>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => add("api", "openai")}
+        >
+          + OpenAI key
         </button>
         <button className="secondary" disabled={busy} onClick={() => add("api")}>
           + Other API key

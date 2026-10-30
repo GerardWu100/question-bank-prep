@@ -101,7 +101,11 @@ The question format is in the [format guide](question-format.md).
 - It only sends the current question or note section, recent messages of that chat, and what it looks up.
 - Only one reply runs at a time. Practice works fully without AI.
 
-**Use an Anthropic (Claude) key.** **Settings → AI provider** → **+ Anthropic key**, paste the key from [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys), then **Save**. The base URL and the models (`claude-sonnet-5-5`, `claude-opus-5-5`) are filled in for you. A key that starts with `sk-ant-` pasted into any API connection switches it to Anthropic by itself.
+**Use an Anthropic (Claude) key.** **Settings → AI provider** → **+ Anthropic key**, paste the key from [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys), then **Save**. The base URL and the models (`claude-sonnet-5-5`, `claude-haiku-5-5`) are filled in for you. A key that starts with `sk-ant-` pasted into any API connection switches it to Anthropic by itself.
+
+**Use an OpenAI key.** **Settings → AI provider** → **+ OpenAI key**, paste the key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys), then **Save**. The base URL and the models (`gpt-6.1-sol`, `gpt-6.1-terra`) are filled in, and they reason (pick the level under **Thinking**).
+
+A new install already lists the ChatGPT subscription, then Anthropic, then OpenAI; a connection without a saved key is skipped until you add one.
 
 **Use another API key instead of Codex.**
 
