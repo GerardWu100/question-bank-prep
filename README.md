@@ -131,7 +131,7 @@ Keep your study folder private when it holds copyrighted material; this reposito
 
 - [User guide](docs/user/user-guide.md): install, daily use, AI setup, problems.
 - [App reference](docs/reference/app-behavior.md): detailed behavior, Docker settings, running from source, backup, tests.
-- [GUIDE_ROOT.md](GUIDE_ROOT.md): architecture and known limits, for developers.
+- [Trail notes](TRAIL_NOTES.md): settled decisions, untested areas and known traps, for developers.
 
 ## License and trademarks
 

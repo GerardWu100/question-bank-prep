@@ -1,6 +1,6 @@
 # App reference
 
-Detailed behavior behind the short [README](../../README.md). Users start with the [user guide](../user/user-guide.md) or the **Guide** tab inside the app; developers also read [GUIDE_ROOT.md](../../GUIDE_ROOT.md).
+Detailed behavior behind the short [README](../../README.md). Users start with the [user guide](../user/user-guide.md) or the **Guide** tab inside the app; developers also read [TRAIL_NOTES.md](../../TRAIL_NOTES.md).
 
 ## Build the desktop app
 
@@ -99,4 +99,4 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Tests use synthetic material and the files in `examples/`, not a proprietary bank. Browser tests use the production build on port 3100, a fresh temporary database, and bundled reading fixtures; they refuse to reuse a running server. Run the build first. The default `npm run test:e2e` runs each spec file with a fresh server so cumulative test traffic does not exhaust the production request limit. To run one focused selection, use `npm run test:e2e -- tests/e2e/resume.spec.ts`; explicit arguments are passed to one Playwright invocation. See [GUIDE_ROOT.md](GUIDE_ROOT.md) for architecture, known limits and acceptance evidence.
+Tests use synthetic material and the files in `examples/`, not a proprietary bank. Browser tests use the production build on port 3100, a fresh temporary database, and bundled reading fixtures; they refuse to reuse a running server. Run the build first. The default `npm run test:e2e` runs each spec file with a fresh server so cumulative test traffic does not exhaust the production request limit. To run one focused selection, use `npm run test:e2e -- tests/e2e/resume.spec.ts`; explicit arguments are passed to one Playwright invocation. See [TRAIL_NOTES.md](../../TRAIL_NOTES.md) for known limits and untested areas.
