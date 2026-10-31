@@ -1,6 +1,6 @@
 # Local operation and recovery
 
-Start the built app with `npm start`, or run the `app` Docker image (see README.md). Runtime data defaults to `app-data/` and is ignored by Git. `STUDY_DATA_DIR` changes its location. Avoid two app processes writing the same data directory: SQLite handles transactions, but in-memory sessions, calculator concurrency and AI cancellation belong to one process.
+Start the built app with `npm start`, or run the `app` Docker image (see README.md). Runtime data defaults to `app-data/` and is ignored by Git. `STUDY_DATA_DIR` changes its location. Avoid two app processes writing the same data directory: SQLite handles transactions, but calculator concurrency, the AI usage limit and AI cancellation belong to one process.
 
 ## Backup
 
@@ -22,13 +22,13 @@ Before the content-checked import matcher, a study-data import could put an answ
 
 ## Interrupted local-file save
 
-The editor checks both the imported hash and current disk bytes. It writes a journal, syncs a temporary file, atomically replaces the source, commits reimport, then removes the journal. There is no recovery screen yet: list unresolved journals with `GET /api/material-recovery`, and resolve one with `POST /api/libraries/<libraryId>/material-recovery/<journalId>`. A matching new hash permits reimport; a matching old hash permits discarding the unfinished journal. A third hash means an external edit and requires manual reconciliation. The journal retains both old and new content. Back up the journal before manual repair.
+The local-file save route (no longer in the UI) checks both the imported hash and current disk bytes. It writes a journal, syncs a temporary file, atomically replaces the source, commits reimport, then removes the journal. There is no recovery screen yet: list unresolved journals with `GET /api/material-recovery`, and resolve one with `POST /api/libraries/<libraryId>/material-recovery/<journalId>`. A matching new hash permits reimport; a matching old hash permits discarding the unfinished journal. A third hash means an external edit and requires manual reconciliation. The journal retains both old and new content. Back up the journal before manual repair.
 
 Application locks cannot prevent an unrelated editor from racing the final filesystem rename. Do not edit the same source simultaneously in two programs.
 
 ## Authentication and AI recovery
 
-Sessions exist only in the current process and expire after 24 hours. Restart invalidates them. The local account password is loaded from `.env`, never stored in exported study data. No API key is accepted by the subscription provider. If Codex credentials/catalog expire, refresh the login in Codex and retry. Provider failures preserve the study core and label incomplete messages honestly. Runs interrupted by restart retain partial content.
+Sign-in sessions are stored in SQLite and last 30 days, renewed on use, so a restart keeps them. The local account password is loaded from `.env`, never stored in exported study data. If a Codex CLI sign-in expires, refresh it in Codex and retry (an app-owned codex-auth-maker sign-in refreshes itself); API keys are separate connections in Settings → AI provider. Provider failures preserve the study core and label incomplete messages honestly. Runs interrupted by restart retain partial content.
 
 ## Verification boundary
 
