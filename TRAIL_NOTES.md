@@ -3,7 +3,7 @@
 ## Decisions
 
 - 2026-10-31: `cfa-study-app-implementation-plan.md` stays unchanged as the intended product contract. Known deviations are deliberate: state is JSON records per library and kind, not the plan's normalized schema.
-- 2026-10-31: The user relaxed strict calculator isolation. The boundary is Node's permission model (the Python AST filter is only a first fence); network and WebAssembly memory stay open on purpose.
+- 2026-10-31: The user relaxed strict calculator isolation. The boundary is Node's permission model (the Python AST filter is only a first fence); network and WebAssembly memory stay open on purpose. The permission boundary was checked by hand on Node 22 only; `tests/security.test.ts` covers just the Python filter.
 - 2026-10-31: Answer keys are hidden on the server only. Never make practice serialization or hint mode depend on a client-side flag. AI never edits source files or writes without a separate user action.
 - 2026-10-31: The set list, source editing and the Focus page were removed from the UI by choice; their server routes remain. Do not delete the routes or bring the UI back unasked.
 - 2026-10-31: The accent is a deep, low-saturation slate teal on purpose; keep it low-key. Text colour pairs keep at least 4.5:1 contrast (WCAG AA) in every theme.
@@ -36,6 +36,8 @@
 - 2026-10-31: Codex runs over SSE, because a session id keeps pi-ai's WebSocket open. Docker mounts the Codex sign-in folder read-write, because a refresh renames a file into place and takes a lock folder beside it.
 - 2026-10-30: pi-ai `usage.input` excludes cached tokens; prompt size is `input + cacheRead`. Codex reports reasoning tokens only sometimes.
 - 2026-10-31: Changing choice labels does not reparse files whose bytes are unchanged; re-import after editing them.
+- 2026-10-17: The partial index `records_question_file` is used only when a query keeps the literal `kind='question'`; a bound `kind=?` parameter silently falls back to a scan.
+- 2026-10-24: Route bodies have no per-route Fastify schemas, only hand checks plus a global field-type hook; validate every new route's body by hand.
 - 2026-10-24: Redirects are refused for API-key endpoints, so an endpoint that redirects (for example http to https) fails instead of being followed.
 
 ## Failed approaches
