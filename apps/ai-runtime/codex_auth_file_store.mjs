@@ -10,13 +10,13 @@
  * OpenAI replaces the refresh token on every refresh, so exactly one party
  * may refresh one sign-in. The file itself says who that is:
  *
- * - "refresh_owner": "pi-ai" (written by login.mjs in codex-auth-maker):
+ * - "refresh_owner": "pi-ai" (written by make_auth.py in codex-auth-maker):
  *   apps own the sign-in. Any app may refresh it, one at a time, under a
  *   cross-process lock beside the file (auth.json.lock).
  * - no marker (written by the Codex CLI, normally ~/.codex/auth.json):
  *   borrowed. The Codex CLI owns refresh; apps only read it. An expired
  *   borrowed token reports "auth_required" instead of refreshing.
- * - file missing: nothing to read; login.mjs may create it.
+ * - file missing: nothing to read; make_auth.py may create it.
  *
  * File shape (Codex CLI compatible):
  *     {"auth_mode": "chatgpt", "OPENAI_API_KEY": null,
