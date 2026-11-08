@@ -3,6 +3,7 @@ title: "Question Bank Prep : une application d'entraînement au CFA® en Markdow
 description: "Une application d'entraînement auto-hébergée pour les études de cas du CFA®. Les banques de questions sont des fichiers Markdown, les réponses sûres et incertaines sont suivies à part, et le tuteur IA cite vos propres notes."
 date: 2026-10-19
 image: images/practice-light.png
+repo: https://github.com/GerardWu100/question-bank-prep
 categories: ["Intelligence artificielle", "Informatique"]
 ---
 # Question Bank Prep : une application d'entraînement au CFA® en Markdown simple

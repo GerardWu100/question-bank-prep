@@ -3,6 +3,7 @@ title: "Question Bank Prep: A CFA® Practice App Built on Plain Markdown"
 description: "A self-hosted practice app for CFA® item sets. Question banks are Markdown files, sure and unsure answers are tracked apart, and the AI tutor cites your own notes."
 date: 2026-10-19
 image: images/practice-light.png
+repo: https://github.com/GerardWu100/question-bank-prep
 categories: ["Artificial Intelligence", "Computer Science"]
 ---
 # Question Bank Prep: a CFA® practice app built on plain Markdown
