@@ -75,7 +75,7 @@ services:
         bind:
           create_host_path: false
       # The ChatGPT sign-in folder: only its auth.json is read. Make the file with
-      # one-time-projects/codex-auth-maker (no Codex CLI needed); the app then
+      # one-offs/codex-auth-maker (no Codex CLI needed); the app then
       # refreshes it and keeps a lock folder beside it, so mount it read-write and
       # make it writable by the user above. A Codex CLI folder (~/.codex) also
       # works, read-only in effect: Codex keeps refreshing it. Without a sign-in

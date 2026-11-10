@@ -17,7 +17,7 @@ The list order is the fallback order. A reply goes to the connection that offers
 
 ## ChatGPT sign-in
 
-The sign-in is a Codex-format `auth.json`: `CODEX_AUTH_FILE`, else `$CODEX_HOME/auth.json`, else `~/.codex/auth.json`. `codex_auth_file_store.mjs` is an unchanged copy of the canonical store in `one-time-projects/codex-auth-maker` (keep them equal; `.d.mts` holds its types):
+The sign-in is a Codex-format `auth.json`: `CODEX_AUTH_FILE`, else `$CODEX_HOME/auth.json`, else `~/.codex/auth.json`. `codex_auth_file_store.mjs` is an unchanged copy of the canonical store in `one-offs/codex-auth-maker` (keep them equal; `.d.mts` holds its types):
 
 - A file with `"refresh_owner": "pi-ai"` (made by codex-auth-maker) is app-owned. pi-ai refreshes it through the store under a cross-process lock beside the file, which every app sharing the file uses. This is how a server runs without the Codex CLI.
 - A file without the marker belongs to the Codex CLI and is only read. An expired one disables the connection until Codex refreshes it.

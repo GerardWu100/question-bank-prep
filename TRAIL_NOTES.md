@@ -11,7 +11,7 @@
 - 2026-10-24: Docker binds use `create_host_path: false`. A missing bank folder would otherwise mount empty, and the root sync would read it as "every bank removed".
 - 2026-10-18: The desktop app saves and reuses its local port, because browser preferences and Resume live in per-origin `localStorage`.
 - 2026-10-31: Browser tests run one spec file per server so test traffic stays under the production limit of 300 requests a minute. Do not raise the production limit to fix test failures.
-- 2026-10-31: `apps/ai-runtime/codex_auth_file_store.mjs` is an unchanged copy of the canonical store in `one-time-projects/codex-auth-maker`. Change it there, then copy.
+- 2026-10-31: `apps/ai-runtime/codex_auth_file_store.mjs` is an unchanged copy of the canonical store in `one-offs/codex-auth-maker`. Change it there, then copy.
 - 2026-10-30: Default connections are the ChatGPT subscription, then Anthropic, then OpenAI (the user's order). Keyless API connections stay listed and are skipped, so a new install shows where a key goes.
 - 2026-10-30: OpenAI keys use the Responses API through pi-ai's catalog, not Chat Completions: Chat Completions sent no reasoning settings, so GPT-6.1 never reasoned.
 - 2026-10-30: `gpt-6.1-sol` stays the tutor default (stronger; one user waits per reply). `gpt-6.1-terra` is a copy of pi-ai 1.4.0's Sol entry until pi-ai lists it.
