@@ -69,13 +69,13 @@ services:
         bind:
           create_host_path: false         # a missing folder is an error, not a root-owned folder
       - type: bind                        # question banks
-        source: ${HOME}/projects/cfa/question_bank
+        source: ${HOME}/projects/personal/cfa/question_bank
         target: /question_bank
         read_only: true
         bind:
           create_host_path: false
       - type: bind                        # study notes
-        source: ${HOME}/projects/cfa/md_materials
+        source: ${HOME}/projects/personal/cfa/md_materials
         target: /materials
         read_only: true
         bind:

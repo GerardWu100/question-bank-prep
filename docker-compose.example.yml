@@ -62,14 +62,14 @@ services:
       # Long form too: a missing (unmounted, mistyped) folder would otherwise be
       # mounted empty, and the folder sync would then remove every bank file.
       - type: bind
-        source: ${HOME}/projects/cfa/question_bank
+        source: ${HOME}/projects/personal/cfa/question_bank
         target: /question_bank
         read_only: true
         bind:
           create_host_path: false
       # Study notes shown on the Materials page and searched by the tutor:
       - type: bind
-        source: ${HOME}/projects/cfa/md_materials
+        source: ${HOME}/projects/personal/cfa/md_materials
         target: /materials
         read_only: true
         bind:
